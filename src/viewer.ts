@@ -1,165 +1,204 @@
-// src/viewer.ts — логика 3D‑сцены (Z‑вверх, выбор объектов, TransformControls)
+// src/viewer.ts
+// Надёжный viewer под Vite + Three r179. Совместим с твоим main.ts (экспортирует makeViewer).
+// Ключевой фикс: TransformControls в этом билде — НЕ Object3D, поэтому в сцену добавляем его _root (Object3D).
 
 import * as THREE from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
-import { TransformControls } from 'three/examples/jsm/controls/TransformControls';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 
-export function makeViewer(canvas: HTMLCanvasElement) {
-  // Вверх = Z (как в CAD)
-  THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
+export type ViewerAPI = {
+  addCube: () => void;
+  addSphere: () => void;
+  addCylinder: () => void;
+  setModeTranslate: () => void;
+  setModeRotate: () => void;
+  setModeScale: () => void;
+  detachSelection: () => void;
+};
 
-  // Рендерер
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+export function makeViewer(canvas: HTMLCanvasElement): ViewerAPI {
+  // --- Renderer / Scene / Camera ---
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-  // Сцена
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x0f1115);
 
-  // Камера
-  const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 5000);
-  camera.up.set(0, 0, 1);
-  camera.position.set(100, 100, 100);
+  const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
+  camera.position.set(6, 6, 10);
 
-  // Орбит‑контролы
+  // --- Lights & Helpers ---
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x222233, 0.7);
+  scene.add(hemi);
+  const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+  dir.position.set(5, 10, 7);
+  scene.add(dir);
+
+  const grid = new THREE.GridHelper(100, 100, 0x3a3a3a, 0x2a2a2a);
+  scene.add(grid);
+  const axes = new THREE.AxesHelper(2);
+  scene.add(axes);
+
+  // --- Controls ---
   const orbit = new OrbitControls(camera, renderer.domElement);
   orbit.enableDamping = true;
+  orbit.dampingFactor = 0.08;
+  orbit.target.set(0, 0, 0);
 
-  // Сетка пола (XY), шаг 10 мм
-  const grid = new THREE.GridHelper(400, 40, 0x444444, 0x222222);
-  grid.rotateX(Math.PI / 2); // XZ -> XY (Z вверх)
-  scene.add(grid);
+  const gizmo = new TransformControls(camera, renderer.domElement) as any;
 
-  // Оси (X=красн, Y=зел, Z=син)
-  scene.add(new THREE.AxesHelper(100));
+  // ⛳️ КЛЮЧ: Сам gizmo не Object3D → добавляем в сцену его корневой узел (_root), который Object3D.
+  const gizmoRoot =
+    (gizmo && gizmo._root && gizmo._root.isObject3D && gizmo._root) ||
+    (gizmo && gizmo.root && gizmo.root.isObject3D && gizmo.root) ||
+    (gizmo && gizmo.isObject3D && gizmo); // на случай классической сборки
 
-  // Свет
-  const dirLight = new THREE.DirectionalLight(0xffffff, 1);
-  dirLight.position.set(200, 200, 300);
-  scene.add(dirLight);
-  scene.add(new THREE.AmbientLight(0xffffff, 0.25));
+  if (gizmoRoot && gizmoRoot.isObject3D) {
+    scene.add(gizmoRoot);
+  } else {
+    // крайний fallback: чтобы контрол был в сцене, добавим его внутренности
+    if (gizmo?._gizmo?.isObject3D) scene.add(gizmo._gizmo);
+    if (gizmo?._plane?.isObject3D) scene.add(gizmo._plane);
+    console.warn('TransformControls не Object3D; добавлены его внутренние узлы (_gizmo/_plane).');
+  }
 
-  // ---- TransformControls ----
-  const gizmo = new TransformControls(camera, renderer.domElement);
-  scene.add(gizmo as unknown as THREE.Object3D);
-
-  // При перетаскивании гизмо — отключаем орбит‑контролы
-  gizmo.addEventListener('dragging-changed', (e) => {
-    // @ts-ignore — TS не знает про поле .value, но оно есть
-    orbit.enabled = !e.value;
+  // Флаги состояния гизмо/указателя
+  let isDragging = false;
+  gizmo.addEventListener('dragging-changed', (e: unknown) => {
+    const dragging = Boolean((e as { value?: unknown })?.value);
+    isDragging = dragging;
+    orbit.enabled = !dragging;
   });
 
-  // Привязки (snapping)
-  gizmo.setTranslationSnap(1); // 1 мм
-  gizmo.setRotationSnap(THREE.MathUtils.degToRad(15)); // 15°
-  gizmo.setScaleSnap(0.1); // шаг масштаба
+  // --- Resize (под full-screen canvas) ---
+  function resizeToWindow() {
+    const w = canvas.clientWidth || window.innerWidth;
+    const h = canvas.clientHeight || window.innerHeight;
+    if (canvas.width !== w || canvas.height !== h) {
+      renderer.setSize(w, h, false);
+      camera.aspect = (w && h) ? w / h : 1;
+      camera.updateProjectionMatrix();
+    }
+  }
+  window.addEventListener('resize', resizeToWindow);
+  resizeToWindow();
 
-  // ---- Выбор объектов кликом ----
+  // --- Objects bucket ---
+  const objectsGroup = new THREE.Group();
+  scene.add(objectsGroup);
+
+  function makeMat(): THREE.MeshStandardMaterial {
+    return new THREE.MeshStandardMaterial({
+      color: 0x8aa1ff,
+      metalness: 0.1,
+      roughness: 0.6,
+    });
+  }
+
+  function addCube() {
+    const geo = new THREE.BoxGeometry(1, 1, 1);
+    const mesh = new THREE.Mesh(geo, makeMat());
+    mesh.position.set(0, 0.5, 0);
+    mesh.frustumCulled = false;
+    objectsGroup.add(mesh);
+    selectObject(mesh);
+  }
+
+  function addSphere() {
+    const geo = new THREE.SphereGeometry(0.6, 32, 16);
+    const mesh = new THREE.Mesh(geo, makeMat());
+    mesh.position.set(0, 0.6, 0);
+    mesh.frustumCulled = false;
+    objectsGroup.add(mesh);
+    selectObject(mesh);
+  }
+
+  function addCylinder() {
+    const geo = new THREE.CylinderGeometry(0.5, 0.5, 1.2, 32);
+    const mesh = new THREE.Mesh(geo, makeMat());
+    mesh.position.set(0, 0.6, 0);
+    mesh.frustumCulled = false;
+    objectsGroup.add(mesh);
+    selectObject(mesh);
+  }
+
+  // --- Picking ---
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
-  const pickables: THREE.Object3D[] = [];
   let selected: THREE.Object3D | null = null;
 
-  function setSelected(obj: THREE.Object3D | null) {
-    if (selected && (selected as any).material?.emissive) {
-      ((selected as any).material.emissive as THREE.Color).setHex(0x000000);
-    }
-    selected = obj;
-    if (selected && (selected as any).material?.emissive) {
-      ((selected as any).material.emissive as THREE.Color).setHex(0x111111);
-      gizmo.attach(selected);
-    } else {
-      gizmo.detach();
-    }
+  function updatePointer(e: PointerEvent) {
+    const rect = canvas.getBoundingClientRect();
+    pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
   }
 
-  function updatePointer(event: PointerEvent) {
-    const rect = (renderer.domElement as HTMLCanvasElement).getBoundingClientRect();
-    pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-  }
-
-  renderer.domElement.addEventListener('pointerdown', (event: PointerEvent) => {
-    // @ts-ignore — TS не знает про dragging, но он есть
-    if (gizmo.dragging) return;
-    updatePointer(event);
+  function pickUnderPointer(e: PointerEvent) {
+    updatePointer(e);
     raycaster.setFromCamera(pointer, camera);
-    const hits = raycaster.intersectObjects(pickables, false);
-    if (hits.length > 0) setSelected(hits[0].object);
-    else setSelected(null);
+    const hits = raycaster.intersectObjects(objectsGroup.children, true);
+    if (hits.length > 0) {
+      const hit = hits[0].object;
+      selectObject(hit);
+      return true;
+    }
+    return false;
+  }
+
+  function selectObject(obj: THREE.Object3D) {
+    // поднимаемся до верхнего узла в группе
+    let top: THREE.Object3D = obj;
+    while (top.parent && top.parent !== objectsGroup && top.parent !== scene) {
+      top = top.parent;
+    }
+    selected = top;
+    gizmo.attach(selected);
+  }
+
+  function detachSelection() {
+    selected = null;
+    gizmo.detach();
+  }
+
+  // Не мешаем гизмо: если перетаскиваем — не пикаем
+  canvas.addEventListener('pointerdown', (e: PointerEvent) => {
+    if (isDragging) return;
+    // Если курсор над ручкой гизмо — тоже не пикаем
+    const overGizmo = ((gizmo as any).axis ?? null) !== null;
+    if (overGizmo) return;
+
+    const hit = pickUnderPointer(e);
+    if (!hit) detachSelection();
   });
 
-  // ---- Ресайз ----
-  function resize() {
-    const w = window.innerWidth;
-    const h = window.innerHeight;
-    renderer.setSize(w, h, false);
-    camera.aspect = w / h;
-    camera.updateProjectionMatrix();
+  // --- Modes API ---
+  function setModeTranslate() {
+    gizmo.setMode('translate');
   }
-  window.addEventListener('resize', resize);
-  resize();
+  function setModeRotate() {
+    gizmo.setMode('rotate');
+  }
+  function setModeScale() {
+    gizmo.setMode('scale');
+  }
 
-  // ---- Рендер‑цикл ----
-  function tick() {
+  // --- Loop ---
+  function loop() {
+    requestAnimationFrame(loop);
     orbit.update();
+    resizeToWindow();
     renderer.render(scene, camera);
-    requestAnimationFrame(tick);
   }
-  tick();
-
-  // ---- Примитивы (низ на Z=0) ----
-
-  // Куб 20×20×20: центр на Z=10
-  function addCube() {
-    const geometry = new THREE.BoxGeometry(20, 20, 20);
-    const material = new THREE.MeshStandardMaterial({ color: 0x00aaff });
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.position.set(0, 0, 10);
-    scene.add(mesh);
-    pickables.push(mesh);
-    setSelected(mesh);
-  }
-
-  // Сфера r=10: центр на Z=10
-  function addSphere() {
-    const geometry = new THREE.SphereGeometry(10, 32, 32);
-    const material = new THREE.MeshStandardMaterial({ color: 0xff4444 });
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.position.set(0, 0, 10);
-    scene.add(mesh);
-    pickables.push(mesh);
-    setSelected(mesh);
-  }
-
-  // Цилиндр D=20, H=20: высота по Z
-  function addCylinder() {
-    const geometry = new THREE.CylinderGeometry(10, 10, 20, 32);
-    geometry.rotateX(Math.PI / 2); // ось высоты Y -> Z
-    const material = new THREE.MeshStandardMaterial({ color: 0x44ff44 });
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.position.set(0, 0, 10);
-    scene.add(mesh);
-    pickables.push(mesh);
-    setSelected(mesh);
-  }
-
-  function detachSelection() { setSelected(null); }
-  function setModeTranslate() { gizmo.setMode('translate'); }
-  function setModeRotate()    { gizmo.setMode('rotate'); }
-  function setModeScale()     { gizmo.setMode('scale');  }
+  loop();
 
   return {
-    scene,
-    camera,
-    renderer,
-    controls: orbit,
     addCube,
     addSphere,
     addCylinder,
-    detachSelection,
     setModeTranslate,
     setModeRotate,
-    setModeScale
+    setModeScale,
+    detachSelection,
   };
 }
