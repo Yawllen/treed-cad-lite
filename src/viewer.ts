@@ -1,80 +1,165 @@
-// src/viewer.ts  — файл с логикой 3D‑сцены
+// src/viewer.ts — логика 3D‑сцены (Z‑вверх, выбор объектов, TransformControls)
 
-// Импортируем весь three.js как одно пространство имён "THREE"
 import * as THREE from 'three';
-// Импортируем готовые контролы камеры (вращение/зум мышью)
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+import { TransformControls } from 'three/examples/jsm/controls/TransformControls';
 
-// Экспортируем функцию, чтобы вызывать её из main.ts
 export function makeViewer(canvas: HTMLCanvasElement) {
-  // Создаём "рендерер" — объект, который рисует 3D‑картинку в нашей канве
-  const renderer = new THREE.WebGLRenderer({
-    canvas: canvas,   // говорим: рисуй в <canvas id="app">
-    antialias: true,  // сглаживание — картинка выглядит приятнее
-    alpha: false      // фон непрозрачный — для CAD это ок
-  });
+  // Вверх = Z (как в CAD)
+  THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
 
-  // Настраиваем плотность пикселей: не выше 2, чтобы не грузить видеокарту на 4K/retina
+  // Рендерер
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
-  // Создаём сцену — это как "контейнер", куда мы добавляем все объекты
+  // Сцена
   const scene = new THREE.Scene();
-  // Задаём цвет фона сцены (тёмный, комфортный для глаз)
   scene.background = new THREE.Color(0x0f1115);
 
-  // Создаём камеру перспективы: (угол обзора 60°, "картинка" 1:1, ближняя и дальняя плоскости)
-  const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
-  // Ставим камеру чуть в стороне и сверху, чтобы было видно сетку и оси
-  camera.position.set(3, 3, 3);
+  // Камера
+  const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 5000);
+  camera.up.set(0, 0, 1);
+  camera.position.set(100, 100, 100);
 
-  // Добавляем "контролы" — это управление камерой мышью (крутить/приближать)
-  const controls = new OrbitControls(camera, renderer.domElement);
-  // Делаем движение камеры плавным
-  controls.enableDamping = true;
+  // Орбит‑контролы
+  const orbit = new OrbitControls(camera, renderer.domElement);
+  orbit.enableDamping = true;
 
-  // Добавляем сетку пола — помогает понять масштаб и ориентацию
-  // Параметры: размер 200, делений 200, цвета линий (тёмно‑серые)
-  const grid = new THREE.GridHelper(200, 200, 0x444444, 0x222222);
+  // Сетка пола (XY), шаг 10 мм
+  const grid = new THREE.GridHelper(400, 40, 0x444444, 0x222222);
+  grid.rotateX(Math.PI / 2); // XZ -> XY (Z вверх)
   scene.add(grid);
 
-  // Добавляем оси XYZ — красная X, зелёная Y, синяя Z
-  const axes = new THREE.AxesHelper(1.5); // длина осей 1.5 условных единиц
-  scene.add(axes);
+  // Оси (X=красн, Y=зел, Z=син)
+  scene.add(new THREE.AxesHelper(100));
 
-  // Добавляем свет: направленный (как "солнце") и фоновый
-  const dirLight = new THREE.DirectionalLight(0xffffff, 1); // белый свет, мощность 1
-  dirLight.position.set(5, 10, 5); // положение источника света в пространстве
+  // Свет
+  const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+  dirLight.position.set(200, 200, 300);
   scene.add(dirLight);
-  const ambLight = new THREE.AmbientLight(0xffffff, 0.25); // слабый общий свет
-  scene.add(ambLight);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.25));
 
-  // Функция, которая подгоняет размер "картинки" под размер окна браузера
+  // ---- TransformControls ----
+  const gizmo = new TransformControls(camera, renderer.domElement);
+  scene.add(gizmo as unknown as THREE.Object3D);
+
+  // При перетаскивании гизмо — отключаем орбит‑контролы
+  gizmo.addEventListener('dragging-changed', (e) => {
+    // @ts-ignore — TS не знает про поле .value, но оно есть
+    orbit.enabled = !e.value;
+  });
+
+  // Привязки (snapping)
+  gizmo.setTranslationSnap(1); // 1 мм
+  gizmo.setRotationSnap(THREE.MathUtils.degToRad(15)); // 15°
+  gizmo.setScaleSnap(0.1); // шаг масштаба
+
+  // ---- Выбор объектов кликом ----
+  const raycaster = new THREE.Raycaster();
+  const pointer = new THREE.Vector2();
+  const pickables: THREE.Object3D[] = [];
+  let selected: THREE.Object3D | null = null;
+
+  function setSelected(obj: THREE.Object3D | null) {
+    if (selected && (selected as any).material?.emissive) {
+      ((selected as any).material.emissive as THREE.Color).setHex(0x000000);
+    }
+    selected = obj;
+    if (selected && (selected as any).material?.emissive) {
+      ((selected as any).material.emissive as THREE.Color).setHex(0x111111);
+      gizmo.attach(selected);
+    } else {
+      gizmo.detach();
+    }
+  }
+
+  function updatePointer(event: PointerEvent) {
+    const rect = (renderer.domElement as HTMLCanvasElement).getBoundingClientRect();
+    pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  }
+
+  renderer.domElement.addEventListener('pointerdown', (event: PointerEvent) => {
+    // @ts-ignore — TS не знает про dragging, но он есть
+    if (gizmo.dragging) return;
+    updatePointer(event);
+    raycaster.setFromCamera(pointer, camera);
+    const hits = raycaster.intersectObjects(pickables, false);
+    if (hits.length > 0) setSelected(hits[0].object);
+    else setSelected(null);
+  });
+
+  // ---- Ресайз ----
   function resize() {
-    // Берём ширину/высоту окна — наша канва растянута на весь экран
     const w = window.innerWidth;
     const h = window.innerHeight;
-    // Говорим рендереру рисовать ровно в эти размеры (без размытия)
     renderer.setSize(w, h, false);
-    // Обновляем "соотношение сторон" для камеры и применяем изменения
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
   }
-
-  // Подписываемся на событие изменения размеров окна (чтобы всё подстраивалось)
   window.addEventListener('resize', resize);
-  // Вызываем один раз при старте, чтобы сразу выставить правильные размеры
   resize();
 
-  // Главный цикл отрисовки — будет вызываться примерно 60 раз в секунду
+  // ---- Рендер‑цикл ----
   function tick() {
-    controls.update();            // обновляем плавность управления камерой
-    renderer.render(scene, camera); // рисуем кадр: "сцена + камера"
-    requestAnimationFrame(tick);  // просим браузер вызвать tick() снова на следующий кадр
+    orbit.update();
+    renderer.render(scene, camera);
+    requestAnimationFrame(tick);
   }
-
-  // Запускаем бесконечный цикл отрисовки
   tick();
 
-  // Возвращаем ссылки на полезные объекты — это пригодится позже (например, чтобы добавлять примитивы)
-  return { scene, camera, renderer, controls };
+  // ---- Примитивы (низ на Z=0) ----
+
+  // Куб 20×20×20: центр на Z=10
+  function addCube() {
+    const geometry = new THREE.BoxGeometry(20, 20, 20);
+    const material = new THREE.MeshStandardMaterial({ color: 0x00aaff });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(0, 0, 10);
+    scene.add(mesh);
+    pickables.push(mesh);
+    setSelected(mesh);
+  }
+
+  // Сфера r=10: центр на Z=10
+  function addSphere() {
+    const geometry = new THREE.SphereGeometry(10, 32, 32);
+    const material = new THREE.MeshStandardMaterial({ color: 0xff4444 });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(0, 0, 10);
+    scene.add(mesh);
+    pickables.push(mesh);
+    setSelected(mesh);
+  }
+
+  // Цилиндр D=20, H=20: высота по Z
+  function addCylinder() {
+    const geometry = new THREE.CylinderGeometry(10, 10, 20, 32);
+    geometry.rotateX(Math.PI / 2); // ось высоты Y -> Z
+    const material = new THREE.MeshStandardMaterial({ color: 0x44ff44 });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(0, 0, 10);
+    scene.add(mesh);
+    pickables.push(mesh);
+    setSelected(mesh);
+  }
+
+  function detachSelection() { setSelected(null); }
+  function setModeTranslate() { gizmo.setMode('translate'); }
+  function setModeRotate()    { gizmo.setMode('rotate'); }
+  function setModeScale()     { gizmo.setMode('scale');  }
+
+  return {
+    scene,
+    camera,
+    renderer,
+    controls: orbit,
+    addCube,
+    addSphere,
+    addCylinder,
+    detachSelection,
+    setModeTranslate,
+    setModeRotate,
+    setModeScale
+  };
 }

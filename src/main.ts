@@ -1,24 +1,38 @@
 // src/main.ts — главный вход приложения
 
-// Импортируем стили, чтобы канва была на весь экран и фон был тёмный
 import './style.css';
-
-// Импортируем нашу функцию, которая создаёт сцену
 import { makeViewer } from './viewer';
 
-// Находим элемент с id="app" в index.html — это наша <canvas>
-const elem = document.getElementById('app'); // получаем ссылку на элемент по id
-
-// Проверяем, что элемент существует и что это именно CANVAS, а не DIV
+// Находим <canvas id="app">
+const elem = document.getElementById('app');
 if (!elem || !(elem instanceof HTMLCanvasElement)) {
-  // Если что‑то не так, бросаем ошибку — это поможет быстрее заметить проблему
   throw new Error('Не найдена канва <canvas id="app"> в index.html');
 }
 
-// Запускаем нашу 3D‑сцену и получаем доступ к её объектам
+// Создаём сцену
 const viewer = makeViewer(elem);
 
-// (Необязательно) Делаем viewer доступным из консоли браузера для отладки
-// Теперь в DevTools можно набрать window.viewer, чтобы смотреть scene/camera
-// @ts-ignore - подсказываем TS, что это ок для отладки
+// Доступ из консоли для отладки
+// @ts-ignore
 (window as any).viewer = viewer;
+
+// Кнопки меню «Примитивы»
+document.getElementById('btn-cube')?.addEventListener('click', () => viewer.addCube());
+document.getElementById('btn-sphere')?.addEventListener('click', () => viewer.addSphere());
+document.getElementById('btn-cylinder')?.addEventListener('click', () => viewer.addCylinder());
+
+// Горячие клавиши: W — перемещение, E — поворот, R — масштаб, Esc — снять выделение
+document.addEventListener('keydown', (e) => {
+  const tag = (document.activeElement && (document.activeElement as HTMLElement).tagName) || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+
+  if (e.key === 'w' || e.key === 'W') {
+    viewer.setModeTranslate();
+  } else if (e.key === 'e' || e.key === 'E') {
+    viewer.setModeRotate();
+  } else if (e.key === 'r' || e.key === 'R') {
+    viewer.setModeScale();
+  } else if (e.key === 'Escape') {
+    viewer.detachSelection();
+  }
+});
