@@ -6,6 +6,7 @@ import {
   attachSelection,
 } from '@controls';
 import { addCube, addSphere, addCylinder } from '@ops';
+import type { SceneNode } from '../types/scene';
 import { mm } from '@utils';
 
 export type ViewerAPI = {
@@ -16,6 +17,17 @@ export type ViewerAPI = {
   setModeRotate: () => void;
   setModeScale: () => void;
   detachSelection: () => void;
+  getSceneGraph: () => SceneNode[];
+  on: (
+    event: 'object-added' | 'object-removed' | 'selection-changed' | 'updated',
+    cb: (payload: any) => void,
+  ) => void;
+  select: (ids: string[]) => void;
+  setVisible: (id: string, v: boolean) => void;
+  setLocked: (id: string, v: boolean) => void;
+  rename: (id: string, name: string) => void;
+  delete: (id: string) => void;
+  reorder: (order: string[]) => void;
 };
 
 export function makeViewer(canvas: HTMLCanvasElement): ViewerAPI {
@@ -76,6 +88,26 @@ export function makeViewer(canvas: HTMLCanvasElement): ViewerAPI {
 
   let selected: THREE.Object3D | null = null;
 
+  const listeners: Record<string, ((d: any) => void)[]> = {};
+  function emit(event: string, data?: any) {
+    (listeners[event] || []).forEach((cb) => cb(data));
+  }
+  function on(event: string, cb: (d: any) => void) {
+    (listeners[event] || (listeners[event] = [])).push(cb);
+  }
+
+  const nameCounters: Record<string, number> = {
+    'куб': 1,
+    'сфера': 1,
+    'цилиндр': 1,
+    'конус': 1,
+    'тор': 1,
+    'эскиз': 1,
+    'свет': 1,
+    'камера': 1,
+    'прочее': 1,
+  };
+
   picker.onPick((obj) => {
     if (isDragging) return;
     const overGizmo = ((gizmo as any).axis ?? null) !== null;
@@ -94,28 +126,45 @@ export function makeViewer(canvas: HTMLCanvasElement): ViewerAPI {
     }
     selected = top;
     gizmo.attach(selected);
+    gizmo.enabled = !(selected as any).userData?.locked;
+    emit('selection-changed', [selected.uuid]);
   }
 
   function detachSelection() {
     selected = null;
     gizmo.detach();
+     emit('selection-changed', []);
   }
 
   function addAndSelect(mesh: THREE.Object3D) {
     objectsGroup.add(mesh);
     selectObject(mesh);
+    emit('object-added', mesh.uuid);
+    emit('updated');
   }
 
   function addCubeOp() {
-    addAndSelect(addCube());
+    const mesh = addCube();
+    mesh.name = `Куб ${nameCounters['куб']++}`;
+    (mesh as any).userData.type = 'куб';
+    (mesh as any).userData.locked = false;
+    addAndSelect(mesh);
   }
 
   function addSphereOp() {
-    addAndSelect(addSphere());
+    const mesh = addSphere();
+    mesh.name = `Сфера ${nameCounters['сфера']++}`;
+    (mesh as any).userData.type = 'сфера';
+    (mesh as any).userData.locked = false;
+    addAndSelect(mesh);
   }
 
   function addCylinderOp() {
-    addAndSelect(addCylinder());
+    const mesh = addCylinder();
+    mesh.name = `Цилиндр ${nameCounters['цилиндр']++}`;
+    (mesh as any).userData.type = 'цилиндр';
+    (mesh as any).userData.locked = false;
+    addAndSelect(mesh);
   }
 
   function setModeTranslate() {
@@ -126,6 +175,73 @@ export function makeViewer(canvas: HTMLCanvasElement): ViewerAPI {
   }
   function setModeScale() {
     gizmo.setMode('scale');
+  }
+
+  function findById(id: string): THREE.Object3D | undefined {
+    return objectsGroup.getObjectByProperty('uuid', id);
+  }
+
+  function getSceneGraph(): SceneNode[] {
+    function toNode(obj: THREE.Object3D): SceneNode {
+      return {
+        id: obj.uuid,
+        name: obj.name || 'Объект',
+        type: (obj as any).userData.type || 'прочее',
+        visible: obj.visible,
+        locked: Boolean((obj as any).userData.locked),
+        children: obj.children
+          .filter((c) => c !== gizmo && c !== gizmoRoot)
+          .map((c) => toNode(c)),
+      };
+    }
+    return objectsGroup.children.map((c) => toNode(c));
+  }
+
+  function select(ids: string[]) {
+    if (!ids.length) {
+      detachSelection();
+      return;
+    }
+    const obj = findById(ids[0]);
+    if (obj) selectObject(obj);
+  }
+
+  function setVisible(id: string, v: boolean) {
+    const obj = findById(id);
+    if (!obj) return;
+    obj.visible = v;
+    emit('updated');
+  }
+
+  function setLocked(id: string, v: boolean) {
+    const obj = findById(id);
+    if (!obj) return;
+    (obj as any).userData.locked = v;
+    if (selected && selected.uuid === id) gizmo.enabled = !v;
+    emit('updated');
+  }
+
+  function rename(id: string, name: string) {
+    const obj = findById(id);
+    if (!obj) return;
+    obj.name = name;
+    emit('updated');
+  }
+
+  function deleteObj(id: string) {
+    const obj = findById(id);
+    if (!obj || !obj.parent) return;
+    obj.parent.remove(obj);
+    if (selected && selected.uuid === id) detachSelection();
+    emit('object-removed', id);
+    emit('updated');
+  }
+
+  function reorder(order: string[]) {
+    objectsGroup.children.sort(
+      (a, b) => order.indexOf(a.uuid) - order.indexOf(b.uuid),
+    );
+    emit('updated');
   }
 
   function loop() {
@@ -144,5 +260,13 @@ export function makeViewer(canvas: HTMLCanvasElement): ViewerAPI {
     setModeRotate,
     setModeScale,
     detachSelection,
+    getSceneGraph,
+    on,
+    select,
+    setVisible,
+    setLocked,
+    rename,
+    delete: deleteObj,
+    reorder,
   };
 }

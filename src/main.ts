@@ -2,19 +2,25 @@
 
 import './style.css';
 import { makeViewer } from './viewer';
+import { mountSceneTree } from './panels/sceneTree';
 
 // Находим <canvas id="app">
 const elem = document.getElementById('app');
 if (!elem || !(elem instanceof HTMLCanvasElement)) {
   throw new Error('Не найдена канва <canvas id="app"> в index.html');
 }
+const canvas = elem as HTMLCanvasElement;
 
 // Создаём сцену
-const viewer = makeViewer(elem);
+const viewer = makeViewer(canvas);
 
 // Доступ из консоли для отладки
 // @ts-ignore
 (window as any).viewer = viewer;
+
+// Панель дерева сцены
+mountSceneTree(viewer);
+const tree = document.getElementById('scene-tree')!;
 
 // Кнопки меню «Примитивы»
 document.getElementById('btn-cube')?.addEventListener('click', () => viewer.addCube());
@@ -26,7 +32,9 @@ document.addEventListener('keydown', (e) => {
   const tag = (document.activeElement && (document.activeElement as HTMLElement).tagName) || '';
   if (tag === 'INPUT' || tag === 'TEXTAREA') return;
 
-  if (e.key === 'w' || e.key === 'W') {
+  if (e.key === 't' || e.key === 'T') {
+    tree.classList.toggle('is-hidden');
+  } else if (e.key === 'w' || e.key === 'W') {
     viewer.setModeTranslate();
   } else if (e.key === 'e' || e.key === 'E') {
     viewer.setModeRotate();

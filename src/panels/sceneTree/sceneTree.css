@@ -1,0 +1,67 @@
+#scene-tree {
+  position: absolute;
+  z-index: 10;
+  top: 50px; /* below toolbar */
+  left: 12px;
+  width: 280px;
+  max-height: calc(100% - 62px);
+  overflow: auto;
+  font-size: 14px;
+  background: transparent;
+}
+
+.is-hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-8px);
+  transition: opacity 0.12s, transform 0.12s;
+}
+
+#scene-tree ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+#scene-tree li {
+  display: flex;
+  align-items: center;
+  padding: 2px 4px;
+  cursor: pointer;
+  user-select: none;
+  background: #1d1f25;
+}
+
+#scene-tree li:hover {
+  background: #2a2d34;
+}
+
+#scene-tree li.selected {
+  background: #333;
+  border-left: 3px solid #646cff;
+}
+
+#scene-tree li .name {
+  flex: 1;
+  padding: 0 4px;
+}
+
+#scene-tree li .actions {
+  display: none;
+  gap: 4px;
+}
+
+#scene-tree li:hover .actions,
+#scene-tree li.selected .actions {
+  display: flex;
+}
+
+#scene-tree li .actions svg {
+  width: 16px;
+  height: 16px;
+  fill: #ccc;
+}
+
+#scene-tree li.locked {
+  opacity: 0.6;
+}

@@ -16,18 +16,23 @@
 }
 
 /* Убираем все отступы у body и растягиваем на весь экран */
-html, body {
+html,
+body {
   margin: 0;
   padding: 0;
-  width: 100%;
-  height: 100%;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
 }
 
 /* Канва занимает всё окно браузера */
 canvas#app {
-  display: block; /* убираем лишние отступы */
-  width: 100%;
-  height: 100%;
+  position: fixed;
+  top: 50px;
+  left: 0;
+  width: 100vw;
+  height: calc(100vh - 50px);
+  display: block;
 }
 
 
@@ -43,7 +48,7 @@ canvas#app {
   align-items: center;
   padding: 0 10px;
   border-bottom: 1px solid #333;
-  z-index: 10;
+  z-index: 100;
 }
 
 /* Меню */
@@ -75,7 +80,7 @@ canvas#app {
   border: 1px solid #444;
   border-radius: 4px;
   min-width: 120px;
-  z-index: 20;
+  z-index: 200;
 }
 
 .dropdown button {
