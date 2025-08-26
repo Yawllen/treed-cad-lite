@@ -1,0 +1,55 @@
+#scene-tree {
+  position: absolute;
+  top: 50px; /* below toolbar */
+  left: 0;
+  bottom: 0;
+  width: 280px;
+  overflow: auto;
+  background: #1a1a1a;
+  border-right: 1px solid #333;
+  font-size: 14px;
+}
+
+#scene-tree ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+#scene-tree li {
+  display: flex;
+  align-items: center;
+  padding: 2px 4px;
+  cursor: pointer;
+  user-select: none;
+}
+
+#scene-tree li.selected {
+  background: #333;
+  border-left: 3px solid #646cff;
+}
+
+#scene-tree li .name {
+  flex: 1;
+  padding: 0 4px;
+}
+
+#scene-tree li .actions {
+  display: none;
+  gap: 4px;
+}
+
+#scene-tree li:hover .actions,
+#scene-tree li.selected .actions {
+  display: flex;
+}
+
+#scene-tree li .actions svg {
+  width: 16px;
+  height: 16px;
+  fill: #ccc;
+}
+
+#scene-tree li.locked {
+  opacity: 0.6;
+}

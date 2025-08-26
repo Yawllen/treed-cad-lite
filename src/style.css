@@ -25,9 +25,12 @@ html, body {
 
 /* Канва занимает всё окно браузера */
 canvas#app {
-  display: block; /* убираем лишние отступы */
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  top: 50px;
+  left: 280px;
+  right: 0;
+  bottom: 0;
+  display: block;
 }
 
 

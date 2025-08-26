@@ -2,6 +2,7 @@
 
 import './style.css';
 import { makeViewer } from './viewer';
+import { mountSceneTree } from './panels/sceneTree';
 
 // Находим <canvas id="app">
 const elem = document.getElementById('app');
@@ -15,6 +16,9 @@ const viewer = makeViewer(elem);
 // Доступ из консоли для отладки
 // @ts-ignore
 (window as any).viewer = viewer;
+
+// Панель дерева сцены
+mountSceneTree(viewer);
 
 // Кнопки меню «Примитивы»
 document.getElementById('btn-cube')?.addEventListener('click', () => viewer.addCube());
