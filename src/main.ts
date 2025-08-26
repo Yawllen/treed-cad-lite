@@ -18,6 +18,19 @@ const viewer = makeViewer(canvas);
 // @ts-ignore
 (window as any).viewer = viewer;
 
+// Простое контекстное меню
+const ctxMenu = document.getElementById('context-menu');
+if (ctxMenu) {
+  viewer.on('context-menu', ({ x, y }) => {
+    (ctxMenu as HTMLDivElement).style.display = 'block';
+    (ctxMenu as HTMLDivElement).style.left = `${x}px`;
+    (ctxMenu as HTMLDivElement).style.top = `${y}px`;
+  });
+  document.addEventListener('click', () => {
+    (ctxMenu as HTMLDivElement).style.display = 'none';
+  });
+}
+
 // Панель дерева сцены
 mountSceneTree(viewer);
 const tree = document.getElementById('scene-tree')!;

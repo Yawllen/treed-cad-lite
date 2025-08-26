@@ -33,7 +33,8 @@ export type ViewerAPI = {
       | 'object-removed'
       | 'selection-changed'
       | 'updated'
-      | 'plane-selected',
+      | 'plane-selected'
+      | 'context-menu',
     cb: (payload: any) => void,
   ) => void;
   select: (ids: string[]) => void;
@@ -60,6 +61,10 @@ export function makeViewer(canvas: HTMLCanvasElement): ViewerAPI {
   scene.add(new THREE.AxesHelper(mm(2)));
 
   const orbit = createOrbitControls(camera, canvas);
+  orbit.mouseButtons = { LEFT: null, MIDDLE: THREE.MOUSE.PAN, RIGHT: null } as any;
+  orbit.enableRotate = false;
+  orbit.enablePan = true;
+  orbit.enableZoom = true;
   const gizmo = createTransformControls(camera, canvas) as any;
 
   const gizmoRoot =
@@ -77,7 +82,7 @@ export function makeViewer(canvas: HTMLCanvasElement): ViewerAPI {
   }
 
   let isDragging = false;
-  let isOrbiting = false;
+  let isCameraAction = false;
   let transformMode: 'translate' | 'rotate' | 'scale' | null = null;
   gizmo.addEventListener('dragging-changed', (e: unknown) => {
     const dragging = Boolean((e as { value?: unknown })?.value);
@@ -100,17 +105,35 @@ export function makeViewer(canvas: HTMLCanvasElement): ViewerAPI {
   const objectsGroup = new THREE.Group();
   scene.add(objectsGroup);
 
-  const picker = attachSelection(objectsGroup, camera, canvas);
-
-  orbit.addEventListener('start', () => {
-    isOrbiting = true;
-    picker.setHoverEnabled(false);
-    clearHoverPlane();
-    clearHoverBody();
+  const picker = attachSelection(objectsGroup, camera, canvas, {
+    isCameraAction: () => isCameraAction,
   });
-  orbit.addEventListener('end', () => {
-    isOrbiting = false;
-    picker.setHoverEnabled(true);
+
+  canvas.addEventListener('pointerdown', (e) => {
+    if (e.button === 1) {
+      if (e.shiftKey) {
+        orbit.enableRotate = true;
+        (orbit.mouseButtons as any).MIDDLE = THREE.MOUSE.ROTATE;
+      } else {
+        orbit.enableRotate = false;
+        (orbit.mouseButtons as any).MIDDLE = THREE.MOUSE.PAN;
+      }
+      isCameraAction = true;
+      clearHoverPlane();
+      clearHoverBody();
+    }
+  });
+  function endCameraAction() {
+    orbit.enableRotate = false;
+    (orbit.mouseButtons as any).MIDDLE = THREE.MOUSE.PAN;
+    isCameraAction = false;
+  }
+  canvas.addEventListener('pointerup', endCameraAction);
+  canvas.addEventListener('pointercancel', endCameraAction);
+
+  canvas.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    emit('context-menu', { x: e.clientX, y: e.clientY });
   });
 
   let selectionMode: 'planes' | 'bodies' = 'planes';
@@ -410,7 +433,7 @@ export function makeViewer(canvas: HTMLCanvasElement): ViewerAPI {
   }
 
   picker.onHover((hit) => {
-    if (isDragging || isOrbiting) return;
+    if (isDragging || isCameraAction) return;
     if (selectionMode === 'planes') {
       hoverPlane(hit);
       clearHoverBody();
@@ -421,7 +444,7 @@ export function makeViewer(canvas: HTMLCanvasElement): ViewerAPI {
   });
 
   picker.onClick((hit) => {
-    if (isDragging || isOrbiting) return;
+    if (isDragging || isCameraAction) return;
     const overGizmo = ((gizmo as any).axis ?? null) !== null;
     if (overGizmo) return;
     if (selectionMode === 'planes') {

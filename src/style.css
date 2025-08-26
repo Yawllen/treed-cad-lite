@@ -102,3 +102,28 @@ canvas#app {
 .menu:hover .dropdown {
   display: block;
 }
+
+/* ====== Context menu ====== */
+#context-menu {
+  position: fixed;
+  display: none;
+  background: #2a2a2a;
+  border: 1px solid #444;
+  z-index: 1000;
+  padding: 4px 0;
+}
+
+#context-menu button {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  color: #fff;
+  text-align: left;
+  padding: 4px 12px;
+  cursor: pointer;
+}
+
+#context-menu button:hover {
+  background: #333;
+}

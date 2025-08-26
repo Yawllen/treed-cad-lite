@@ -4,6 +4,7 @@ export function attachSelection(
   root: THREE.Object3D,
   camera: THREE.Camera,
   canvas: HTMLCanvasElement,
+  options: { isCameraAction?: () => boolean } = {},
 ) {
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
@@ -11,6 +12,7 @@ export function attachSelection(
   let clickCb: (hit: THREE.Intersection | null) => void = () => {};
   let hoverEnabled = true;
   let downPos: { x: number; y: number } | null = null;
+  const isCameraAction = options.isCameraAction || (() => false);
 
   function getHit(e: PointerEvent): THREE.Intersection | null {
     const rect = canvas.getBoundingClientRect();
@@ -30,16 +32,23 @@ export function attachSelection(
     return hits.length > 0 ? hits[0] : null;
   }
   function onPointerMove(e: PointerEvent) {
-    if (!hoverEnabled) return;
+    if (!hoverEnabled || isCameraAction()) return;
     hoverCb(getHit(e));
   }
 
   function onPointerDown(e: PointerEvent) {
+    if (e.button !== 0 || isCameraAction()) {
+      downPos = null;
+      return;
+    }
     downPos = { x: e.clientX, y: e.clientY };
   }
 
   function onPointerUp(e: PointerEvent) {
-    if (!downPos) return;
+    if (e.button !== 0 || isCameraAction() || !downPos) {
+      downPos = null;
+      return;
+    }
     const dx = e.clientX - downPos.x;
     const dy = e.clientY - downPos.y;
     downPos = null;
@@ -47,9 +56,14 @@ export function attachSelection(
     clickCb(getHit(e));
   }
 
+  function onPointerCancel() {
+    downPos = null;
+  }
+
   canvas.addEventListener('pointermove', onPointerMove);
   canvas.addEventListener('pointerdown', onPointerDown);
   canvas.addEventListener('pointerup', onPointerUp);
+  canvas.addEventListener('pointercancel', onPointerCancel);
 
   return {
     onHover(cb: (hit: THREE.Intersection | null) => void) {
