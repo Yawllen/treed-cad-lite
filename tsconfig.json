@@ -12,6 +12,21 @@
     "verbatimModuleSyntax": true,
     "moduleDetection": "force",
     "noEmit": true,
+    "baseUrl": "src",
+    "paths": {
+      "@core": ["core"],
+      "@core/*": ["core/*"],
+      "@scene": ["scene/index"],
+      "@scene/*": ["scene/*"],
+      "@controls": ["controls/index"],
+      "@controls/*": ["controls/*"],
+      "@ops": ["ops/index"],
+      "@ops/*": ["ops/*"],
+      "@ui": ["ui"],
+      "@ui/*": ["ui/*"],
+      "@utils": ["utils/index"],
+      "@utils/*": ["utils/*"]
+    },
 
     /* Linting */
     "strict": true,
