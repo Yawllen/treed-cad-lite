@@ -1,33 +1,15 @@
-<!doctype html> <!-- Сообщаем браузеру: это HTML5 документ -->
-<html lang="ru"> <!-- Устанавливаем язык страницы на русский -->
-  <head> <!-- "Голова" документа: настройки и метаинформация -->
-    <meta charset="UTF-8" /> <!-- Кодировка UTF-8 -->
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" /> <!-- Адаптивность -->
-    <meta http-equiv="X-UA-Compatible" content="IE=edge" /> <!-- Совместимость со старыми IE -->
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <meta name="description" content="TreeD CAD-lite — онлайн-CAD для моделирования простых деталей и заказа 3D-печати." />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" /> <!-- Иконка вкладки -->
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <title>TreeD CAD-lite — онлайн-CAD</title>
   </head>
   <body>
-
-    <!-- Верхняя панель инструментов -->
-    <div id="toolbar">
-      <!-- Главное меню -->
-      <div class="menu">
-        <button class="menu-btn">Примитивы ▾</button>
-        <!-- Выпадающий список с кнопками -->
-        <div class="dropdown">
-          <button id="btn-cube">Куб</button>
-          <button id="btn-sphere">Сфера</button>
-          <button id="btn-cylinder">Цилиндр</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Канва для 3D-сцены -->
-    <canvas id="app"></canvas>
-
-    <!-- Подключаем главный скрипт -->
+    <div id="root"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

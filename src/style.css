@@ -1,99 +1,64 @@
-/* Корневые настройки: задаём шрифты, цвет текста и фона */
 :root {
-  /* Системные шрифты, которые поддерживают кириллицу */
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue",
-    Arial, "Noto Sans", "PT Sans", "Montserrat", sans-serif;
-
-  line-height: 1.5; /* удобочитаемый межстрочный интервал */
-  font-weight: 400; /* обычная толщина текста */
-
-  color: rgba(255, 255, 255, 0.87); /* цвет текста по умолчанию */
-  background-color: #0f1115; /* фон страницы (тёмный, приятный для 3D) */
-
-  text-rendering: optimizeLegibility; /* улучшенное сглаживание текста */
-  -webkit-font-smoothing: antialiased; /* для WebKit-браузеров */
-  -moz-osx-font-smoothing: grayscale;  /* для MacOS */
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    "Noto Sans", "PT Sans", "Montserrat", sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.87);
+  background-color: #0f1115;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Убираем все отступы у body и растягиваем на весь экран */
-html, body {
+html,
+body {
   margin: 0;
   padding: 0;
   width: 100%;
   height: 100%;
 }
 
-/* Канва занимает всё окно браузера */
-canvas#app {
-  display: block; /* убираем лишние отступы */
-  width: 100%;
-  height: 100%;
+#layout {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
 }
 
-
-/* ====== Toolbar ====== */
 #toolbar {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 50px;
+  height: 48px;
   background: #1e1e1e;
+  border-bottom: 1px solid #333;
   display: flex;
   align-items: center;
-  padding: 0 10px;
-  border-bottom: 1px solid #333;
+  padding: 0 8px;
   z-index: 10;
 }
 
-/* Меню */
-.menu {
-  position: relative; /* нужно для выпадашки */
+#main {
+  flex: 1;
+  display: flex;
 }
 
-.menu-btn {
-  background: #2a2a2a;
-  color: #fff;
-  border: 1px solid #444;
-  padding: 6px 12px;
-  border-radius: 4px;
-  cursor: pointer;
+#browser {
+  width: 200px;
+  background: #1a1a1a;
+  border-right: 1px solid #333;
 }
 
-.menu-btn:hover {
-  background: #333;
-  border-color: #646cff;
+#inspector {
+  width: 240px;
+  background: #1a1a1a;
+  border-left: 1px solid #333;
 }
 
-/* Выпадающий список */
-.dropdown {
-  display: none; /* спрятано по умолчанию */
-  position: absolute;
-  top: 100%; /* под кнопкой */
-  left: 0;
-  background: #2a2a2a;
-  border: 1px solid #444;
-  border-radius: 4px;
-  min-width: 120px;
-  z-index: 20;
+#timeline {
+  height: 80px;
+  background: #1a1a1a;
+  border-top: 1px solid #333;
 }
 
-.dropdown button {
-  display: block;
-  width: 100%;
-  padding: 6px 12px;
-  background: none;
-  border: none;
-  color: #fff;
-  text-align: left;
-  cursor: pointer;
-}
-
-.dropdown button:hover {
-  background: #333;
-}
-
-/* показываем меню при наведении */
-.menu:hover .dropdown {
+canvas#app {
+  flex: 1;
   display: block;
 }
