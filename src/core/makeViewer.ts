@@ -17,9 +17,15 @@ export type ViewerAPI = {
   setModeRotate: () => void;
   setModeScale: () => void;
   detachSelection: () => void;
+  getSelectedPlane: () => { origin: THREE.Vector3; normal: THREE.Vector3 } | null;
   getSceneGraph: () => SceneNode[];
   on: (
-    event: 'object-added' | 'object-removed' | 'selection-changed' | 'updated',
+    event:
+      | 'object-added'
+      | 'object-removed'
+      | 'selection-changed'
+      | 'updated'
+      | 'face-selected',
     cb: (payload: any) => void,
   ) => void;
   select: (ids: string[]) => void;
@@ -87,6 +93,15 @@ export function makeViewer(canvas: HTMLCanvasElement): ViewerAPI {
   const picker = attachSelection(objectsGroup, camera, canvas);
 
   let selected: THREE.Object3D | null = null;
+  let selectedPlane:
+    | {
+        objectId: string;
+        faceIndex: number;
+        origin: THREE.Vector3;
+        normal: THREE.Vector3;
+      }
+    | null = null;
+  let faceHelper: THREE.Object3D | null = null;
 
   const listeners: Record<string, ((d: any) => void)[]> = {};
   function emit(event: string, data?: any) {
@@ -108,7 +123,96 @@ export function makeViewer(canvas: HTMLCanvasElement): ViewerAPI {
     'прочее': 1,
   };
 
-  picker.onPick((obj) => {
+  function clearSelectedFace() {
+    if (faceHelper && faceHelper.parent) {
+      faceHelper.parent.remove(faceHelper);
+      (faceHelper as any).traverse?.((child: any) => {
+        if (child.geometry) child.geometry.dispose();
+        if (child.material) child.material.dispose();
+      });
+    }
+    faceHelper = null;
+    if (selectedPlane) {
+      selectedPlane = null;
+      emit('face-selected', null);
+    }
+  }
+
+  function highlightFace(hit: THREE.Intersection) {
+    if (!hit.face) return;
+    clearSelectedFace();
+
+    const mesh = hit.object as THREE.Mesh;
+    const geom = mesh.geometry as THREE.BufferGeometry;
+    const pos = geom.attributes.position as THREE.BufferAttribute;
+    const a = new THREE.Vector3().fromBufferAttribute(pos, hit.face.a);
+    const b = new THREE.Vector3().fromBufferAttribute(pos, hit.face.b);
+    const c = new THREE.Vector3().fromBufferAttribute(pos, hit.face.c);
+    const faceGeom = new THREE.BufferGeometry();
+    faceGeom.setAttribute(
+      'position',
+      new THREE.Float32BufferAttribute([...a.toArray(), ...b.toArray(), ...c.toArray()], 3),
+    );
+    faceGeom.setIndex([0, 1, 2]);
+
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xffff00,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.5,
+      depthTest: false,
+    });
+    const lineMat = new THREE.LineBasicMaterial({
+      color: 0x000000,
+      depthTest: false,
+    });
+    const fill = new THREE.Mesh(faceGeom, mat);
+    const outline = new THREE.LineLoop(faceGeom, lineMat);
+    fill.renderOrder = 1000;
+    outline.renderOrder = 1001;
+    const helper = new THREE.Group();
+    helper.add(fill);
+    helper.add(outline);
+    (helper as any).raycast = () => {};
+    mesh.add(helper);
+    faceHelper = helper;
+
+    const normal = hit.face.normal
+      .clone()
+      .transformDirection(mesh.matrixWorld)
+      .normalize();
+    selectedPlane = {
+      objectId: (() => {
+        let top: THREE.Object3D = mesh;
+        while (top.parent && top.parent !== objectsGroup && top.parent !== scene) {
+          top = top.parent;
+        }
+        return top.uuid;
+      })(),
+      faceIndex: hit.faceIndex ?? 0,
+      origin: hit.point.clone(),
+      normal,
+    };
+    emit('face-selected', {
+      objectId: selectedPlane.objectId,
+      faceIndex: selectedPlane.faceIndex,
+      origin: selectedPlane.origin.clone(),
+      normal: selectedPlane.normal.clone(),
+    });
+  }
+
+  picker.onSingle((hit) => {
+    if (isDragging) return;
+    const overGizmo = ((gizmo as any).axis ?? null) !== null;
+    if (overGizmo) return;
+    if (hit) {
+      highlightFace(hit);
+    } else {
+      clearSelectedFace();
+    }
+  });
+
+  picker.onDouble((obj) => {
     if (isDragging) return;
     const overGizmo = ((gizmo as any).axis ?? null) !== null;
     if (overGizmo) return;
@@ -117,6 +221,7 @@ export function makeViewer(canvas: HTMLCanvasElement): ViewerAPI {
     } else {
       detachSelection();
     }
+    clearSelectedFace();
   });
 
   function selectObject(obj: THREE.Object3D) {
@@ -133,7 +238,8 @@ export function makeViewer(canvas: HTMLCanvasElement): ViewerAPI {
   function detachSelection() {
     selected = null;
     gizmo.detach();
-     emit('selection-changed', []);
+    emit('selection-changed', []);
+    clearSelectedFace();
   }
 
   function addAndSelect(mesh: THREE.Object3D) {
@@ -197,6 +303,14 @@ export function makeViewer(canvas: HTMLCanvasElement): ViewerAPI {
     return objectsGroup.children.map((c) => toNode(c));
   }
 
+  function getSelectedPlane() {
+    if (!selectedPlane) return null;
+    return {
+      origin: selectedPlane.origin.clone(),
+      normal: selectedPlane.normal.clone(),
+    };
+  }
+
   function select(ids: string[]) {
     if (!ids.length) {
       detachSelection();
@@ -210,6 +324,7 @@ export function makeViewer(canvas: HTMLCanvasElement): ViewerAPI {
     const obj = findById(id);
     if (!obj) return;
     obj.visible = v;
+    if (selectedPlane && selectedPlane.objectId === id) clearSelectedFace();
     emit('updated');
   }
 
@@ -233,6 +348,7 @@ export function makeViewer(canvas: HTMLCanvasElement): ViewerAPI {
     if (!obj || !obj.parent) return;
     obj.parent.remove(obj);
     if (selected && selected.uuid === id) detachSelection();
+    if (selectedPlane && selectedPlane.objectId === id) clearSelectedFace();
     emit('object-removed', id);
     emit('updated');
   }
@@ -262,6 +378,7 @@ export function makeViewer(canvas: HTMLCanvasElement): ViewerAPI {
     detachSelection,
     getSceneGraph,
     on,
+    getSelectedPlane,
     select,
     setVisible,
     setLocked,
