@@ -77,6 +77,7 @@ export function makeViewer(canvas: HTMLCanvasElement): ViewerAPI {
   }
 
   let isDragging = false;
+  let isOrbiting = false;
   let transformMode: 'translate' | 'rotate' | 'scale' | null = null;
   gizmo.addEventListener('dragging-changed', (e: unknown) => {
     const dragging = Boolean((e as { value?: unknown })?.value);
@@ -100,6 +101,17 @@ export function makeViewer(canvas: HTMLCanvasElement): ViewerAPI {
   scene.add(objectsGroup);
 
   const picker = attachSelection(objectsGroup, camera, canvas);
+
+  orbit.addEventListener('start', () => {
+    isOrbiting = true;
+    picker.setHoverEnabled(false);
+    clearHoverPlane();
+    clearHoverBody();
+  });
+  orbit.addEventListener('end', () => {
+    isOrbiting = false;
+    picker.setHoverEnabled(true);
+  });
 
   let selectionMode: 'planes' | 'bodies' = 'planes';
 
@@ -398,7 +410,7 @@ export function makeViewer(canvas: HTMLCanvasElement): ViewerAPI {
   }
 
   picker.onHover((hit) => {
-    if (isDragging) return;
+    if (isDragging || isOrbiting) return;
     if (selectionMode === 'planes') {
       hoverPlane(hit);
       clearHoverBody();
@@ -409,7 +421,7 @@ export function makeViewer(canvas: HTMLCanvasElement): ViewerAPI {
   });
 
   picker.onClick((hit) => {
-    if (isDragging) return;
+    if (isDragging || isOrbiting) return;
     const overGizmo = ((gizmo as any).axis ?? null) !== null;
     if (overGizmo) return;
     if (selectionMode === 'planes') {

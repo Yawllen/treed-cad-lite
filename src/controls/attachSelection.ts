@@ -9,6 +9,8 @@ export function attachSelection(
   const pointer = new THREE.Vector2();
   let hoverCb: (hit: THREE.Intersection | null) => void = () => {};
   let clickCb: (hit: THREE.Intersection | null) => void = () => {};
+  let hoverEnabled = true;
+  let downPos: { x: number; y: number } | null = null;
 
   function getHit(e: PointerEvent): THREE.Intersection | null {
     const rect = canvas.getBoundingClientRect();
@@ -28,15 +30,26 @@ export function attachSelection(
     return hits.length > 0 ? hits[0] : null;
   }
   function onPointerMove(e: PointerEvent) {
+    if (!hoverEnabled) return;
     hoverCb(getHit(e));
   }
 
   function onPointerDown(e: PointerEvent) {
+    downPos = { x: e.clientX, y: e.clientY };
+  }
+
+  function onPointerUp(e: PointerEvent) {
+    if (!downPos) return;
+    const dx = e.clientX - downPos.x;
+    const dy = e.clientY - downPos.y;
+    downPos = null;
+    if (dx * dx + dy * dy > 4) return;
     clickCb(getHit(e));
   }
 
   canvas.addEventListener('pointermove', onPointerMove);
   canvas.addEventListener('pointerdown', onPointerDown);
+  canvas.addEventListener('pointerup', onPointerUp);
 
   return {
     onHover(cb: (hit: THREE.Intersection | null) => void) {
@@ -44,6 +57,10 @@ export function attachSelection(
     },
     onClick(cb: (hit: THREE.Intersection | null) => void) {
       clickCb = cb;
+    },
+    setHoverEnabled(v: boolean) {
+      hoverEnabled = v;
+      if (!v) hoverCb(null);
     },
   };
 }
