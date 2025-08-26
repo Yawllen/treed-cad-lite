@@ -6,6 +6,7 @@ import {
   attachSelection,
 } from '@controls';
 import { addCube, addSphere, addCylinder } from '@ops';
+import { mm } from '@utils';
 
 export type ViewerAPI = {
   addCube: () => void;
@@ -30,7 +31,7 @@ export function makeViewer(canvas: HTMLCanvasElement): ViewerAPI {
 
   scene.add(createLights());
   scene.add(createGrid());
-  scene.add(new THREE.AxesHelper(2));
+  scene.add(new THREE.AxesHelper(mm(2)));
 
   const orbit = createOrbitControls(camera, canvas);
   const gizmo = createTransformControls(camera, canvas) as any;

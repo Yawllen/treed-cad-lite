@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mm } from '@utils';
 
 function createMaterial(): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({
@@ -9,7 +10,9 @@ function createMaterial(): THREE.MeshStandardMaterial {
 }
 
 export function addTorus(r = 10, tube = 3, radialSegments = 16, tubularSegments = 100): THREE.Mesh {
-  const geo = new THREE.TorusGeometry(r, tube, radialSegments, tubularSegments);
+  const radius = mm(r);
+  const tubeR = mm(tube);
+  const geo = new THREE.TorusGeometry(radius, tubeR, radialSegments, tubularSegments);
   const mesh = new THREE.Mesh(geo, createMaterial());
   mesh.frustumCulled = false;
   return mesh;
