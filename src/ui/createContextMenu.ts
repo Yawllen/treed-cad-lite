@@ -9,6 +9,7 @@ export function createContextMenu(mountEl: HTMLElement) {
   menu.style.padding = '4px';
   menu.style.background = '#333';
   menu.style.color = '#fff';
+  menu.style.zIndex = '1000';
   mountEl.appendChild(menu);
 
   let selectCb: (val: string) => void = () => {};

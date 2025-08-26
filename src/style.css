@@ -27,7 +27,7 @@ html, body {
 canvas#app {
   position: absolute;
   top: 50px;
-  left: 280px;
+  left: 0;
   right: 0;
   bottom: 0;
   display: block;
@@ -46,7 +46,7 @@ canvas#app {
   align-items: center;
   padding: 0 10px;
   border-bottom: 1px solid #333;
-  z-index: 10;
+  z-index: 100;
 }
 
 /* Меню */
@@ -78,7 +78,7 @@ canvas#app {
   border: 1px solid #444;
   border-radius: 4px;
   min-width: 120px;
-  z-index: 20;
+  z-index: 200;
 }
 
 .dropdown button {

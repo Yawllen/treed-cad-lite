@@ -10,7 +10,6 @@ if (!elem || !(elem instanceof HTMLCanvasElement)) {
   throw new Error('Не найдена канва <canvas id="app"> в index.html');
 }
 const canvas = elem as HTMLCanvasElement;
-canvas.style.left = '0';
 
 // Создаём сцену
 const viewer = makeViewer(canvas);

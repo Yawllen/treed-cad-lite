@@ -1,6 +1,6 @@
 #scene-tree {
   position: absolute;
-  z-index: 20;
+  z-index: 10;
   top: 50px; /* below toolbar */
   left: 12px;
   width: 280px;
