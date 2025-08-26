@@ -286,12 +286,17 @@ export function makeViewer(canvas: HTMLCanvasElement): ViewerAPI {
     });
     const fill = new THREE.Mesh(shapeGeom, fillMat);
     const outline = new THREE.LineLoop(outlineGeom, lineMat);
-    fill.renderOrder = 1000;
-    outline.renderOrder = 1001;
+    fill.renderOrder = 999;
+    outline.renderOrder = 999;
+    (fill as any).raycast = () => {};
+    (outline as any).raycast = () => {};
+    (fill as any).userData.isHelper = true;
+    (outline as any).userData.isHelper = true;
     const helper = new THREE.Group();
     helper.add(fill);
     helper.add(outline);
     (helper as any).raycast = () => {};
+    (helper as any).userData.isHelper = true;
     return { helper, faceIds, normal: baseNormal.clone() };
   }
 
@@ -348,8 +353,9 @@ export function makeViewer(canvas: HTMLCanvasElement): ViewerAPI {
     const geom = new THREE.EdgesGeometry(mesh.geometry as THREE.BufferGeometry);
     const mat = new THREE.LineBasicMaterial({ color: 0xffff00, depthTest: false });
     const lines = new THREE.LineSegments(geom, mat);
-    lines.renderOrder = 1000;
+    lines.renderOrder = 999;
     (lines as any).raycast = () => {};
+    (lines as any).userData.isHelper = true;
     mesh.add(lines);
     return lines;
   }

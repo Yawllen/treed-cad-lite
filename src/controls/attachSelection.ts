@@ -15,7 +15,16 @@ export function attachSelection(
     pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
     pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
     raycaster.setFromCamera(pointer, camera);
-    const hits = raycaster.intersectObjects(root.children, true);
+    const hits = raycaster
+      .intersectObjects(root.children, true)
+      .filter((h) => {
+        let obj: THREE.Object3D | null = h.object;
+        while (obj) {
+          if ((obj as any).userData?.isHelper) return false;
+          obj = obj.parent;
+        }
+        return true;
+      });
     return hits.length > 0 ? hits[0] : null;
   }
   function onPointerMove(e: PointerEvent) {
