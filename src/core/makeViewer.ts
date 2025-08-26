@@ -5,8 +5,16 @@ import {
   createTransformControls,
   attachSelection,
 } from '@controls';
-import { addCube, addSphere, addCylinder } from '@ops';
-import { mm } from '@utils';
+import { createPrimitivesMenu } from '@ui/createPrimitivesMenu';
+import type { PrimitiveKind } from '@ui/createPrimitivesMenu';
+import {
+  addCube,
+  addSphere,
+  addCylinder,
+  addTorus,
+  addCoil,
+  addPipe,
+} from '@ops';
 
 export type ViewerAPI = {
   addCube: () => void;
@@ -31,7 +39,7 @@ export function makeViewer(canvas: HTMLCanvasElement): ViewerAPI {
 
   scene.add(createLights());
   scene.add(createGrid());
-  scene.add(new THREE.AxesHelper(mm(2)));
+  scene.add(new THREE.AxesHelper(100));
 
   const orbit = createOrbitControls(camera, canvas);
   const gizmo = createTransformControls(camera, canvas) as any;
@@ -117,6 +125,34 @@ export function makeViewer(canvas: HTMLCanvasElement): ViewerAPI {
   function addCylinderOp() {
     addAndSelect(addCylinder());
   }
+
+  createPrimitivesMenu({
+    mount: canvas.parentElement || document.body,
+    onSelect: (kind: PrimitiveKind) => {
+      let obj: THREE.Object3D | null = null;
+      switch (kind) {
+        case 'Куб':
+          obj = addCube();
+          break;
+        case 'Цилиндр':
+          obj = addCylinder();
+          break;
+        case 'Сфера':
+          obj = addSphere();
+          break;
+        case 'Тор':
+          obj = addTorus();
+          break;
+        case 'Пружина':
+          obj = addCoil();
+          break;
+        case 'Труба':
+          obj = addPipe();
+          break;
+      }
+      if (obj) addAndSelect(obj);
+    },
+  });
 
   function setModeTranslate() {
     gizmo.setMode('translate');

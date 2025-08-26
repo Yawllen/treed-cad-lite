@@ -3,6 +3,8 @@ export * from './addSphere';
 export * from './addCylinder';
 export * from './addCone';
 export * from './addTorus';
+export * from './addCoil';
+export * from './addPipe';
 export * from './move';
 export * from './rotate';
 export * from './scale';
