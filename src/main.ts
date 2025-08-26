@@ -18,6 +18,19 @@ const viewer = makeViewer(canvas);
 // @ts-ignore
 (window as any).viewer = viewer;
 
+// Простое контекстное меню
+const ctxMenu = document.getElementById('context-menu');
+if (ctxMenu) {
+  viewer.on('context-menu', ({ x, y }) => {
+    (ctxMenu as HTMLDivElement).style.display = 'block';
+    (ctxMenu as HTMLDivElement).style.left = `${x}px`;
+    (ctxMenu as HTMLDivElement).style.top = `${y}px`;
+  });
+  document.addEventListener('click', () => {
+    (ctxMenu as HTMLDivElement).style.display = 'none';
+  });
+}
+
 // Панель дерева сцены
 mountSceneTree(viewer);
 const tree = document.getElementById('scene-tree')!;
@@ -26,6 +39,15 @@ const tree = document.getElementById('scene-tree')!;
 document.getElementById('btn-cube')?.addEventListener('click', () => viewer.addCube());
 document.getElementById('btn-sphere')?.addEventListener('click', () => viewer.addSphere());
 document.getElementById('btn-cylinder')?.addEventListener('click', () => viewer.addCylinder());
+
+// Селектор режима выбора: плоскости или тела
+const modeSel = document.getElementById('mode-select') as HTMLSelectElement | null;
+if (modeSel) {
+  viewer.setSelectionMode((modeSel.value as 'planes' | 'bodies') || 'planes');
+  modeSel.addEventListener('change', () =>
+    viewer.setSelectionMode(modeSel.value as 'planes' | 'bodies'),
+  );
+}
 
 // Горячие клавиши: W — перемещение, E — поворот, R — масштаб, Esc — снять выделение
 document.addEventListener('keydown', (e) => {

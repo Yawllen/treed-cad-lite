@@ -22,12 +22,21 @@
           <button id="btn-cylinder">Цилиндр</button>
         </div>
       </div>
+      <select id="mode-select">
+        <option value="planes" selected>Плоскости</option>
+        <option value="bodies">Тела</option>
+      </select>
     </div>
     <!-- Левая панель: дерево сцены -->
     <div id="scene-tree"></div>
 
     <!-- Канва для 3D-сцены -->
     <canvas id="app"></canvas>
+
+    <!-- Простое контекстное меню -->
+    <div id="context-menu">
+      <button id="ctx-dummy">Действие</button>
+    </div>
 
     <!-- Подключаем главный скрипт -->
     <script type="module" src="/src/main.ts"></script>
