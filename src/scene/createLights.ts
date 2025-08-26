@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mm } from '@utils';
 
 export function createLights(): THREE.Group {
   const group = new THREE.Group();
@@ -7,7 +8,7 @@ export function createLights(): THREE.Group {
   group.add(hemi);
 
   const dir = new THREE.DirectionalLight(0xffffff, 0.8);
-  dir.position.set(5, 10, 7);
+  dir.position.set(mm(5), mm(10), mm(7));
   group.add(dir);
 
   return group;

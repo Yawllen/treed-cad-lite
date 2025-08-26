@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mm } from '@utils';
 
 function createMaterial(): THREE.MeshStandardMaterial {
   return new THREE.MeshStandardMaterial({
@@ -9,9 +10,10 @@ function createMaterial(): THREE.MeshStandardMaterial {
 }
 
 export function addSphere(r = 10, segments = 32): THREE.Mesh {
-  const geo = new THREE.SphereGeometry(r, segments, segments / 2);
+  const radius = mm(r);
+  const geo = new THREE.SphereGeometry(radius, segments, segments / 2);
   const mesh = new THREE.Mesh(geo, createMaterial());
-  mesh.position.set(0, r, 0);
+  mesh.position.set(0, radius, 0);
   mesh.frustumCulled = false;
   return mesh;
 }
