@@ -17,7 +17,15 @@ export type ViewerAPI = {
   setModeRotate: () => void;
   setModeScale: () => void;
   detachSelection: () => void;
-  getSelectedPlane: () => { origin: THREE.Vector3; normal: THREE.Vector3 } | null;
+  setSelectionMode: (mode: 'planes' | 'bodies') => void;
+  getSelectedPlane: () =>
+    | {
+        objectId: string;
+        faceIds: number[];
+        origin: THREE.Vector3;
+        normal: THREE.Vector3;
+      }
+    | null;
   getSceneGraph: () => SceneNode[];
   on: (
     event:
@@ -25,7 +33,7 @@ export type ViewerAPI = {
       | 'object-removed'
       | 'selection-changed'
       | 'updated'
-      | 'face-selected',
+      | 'plane-selected',
     cb: (payload: any) => void,
   ) => void;
   select: (ids: string[]) => void;
@@ -69,6 +77,7 @@ export function makeViewer(canvas: HTMLCanvasElement): ViewerAPI {
   }
 
   let isDragging = false;
+  let transformMode: 'translate' | 'rotate' | 'scale' | null = null;
   gizmo.addEventListener('dragging-changed', (e: unknown) => {
     const dragging = Boolean((e as { value?: unknown })?.value);
     isDragging = dragging;
@@ -92,16 +101,22 @@ export function makeViewer(canvas: HTMLCanvasElement): ViewerAPI {
 
   const picker = attachSelection(objectsGroup, camera, canvas);
 
+  let selectionMode: 'planes' | 'bodies' = 'planes';
+
   let selected: THREE.Object3D | null = null;
+  let selectedBodyHelper: THREE.Object3D | null = null;
+  let hoverBodyHelper: THREE.Object3D | null = null;
+
   let selectedPlane:
     | {
         objectId: string;
-        faceIndex: number;
+        faceIds: number[];
         origin: THREE.Vector3;
         normal: THREE.Vector3;
       }
     | null = null;
-  let faceHelper: THREE.Object3D | null = null;
+  let selectedPlaneHelper: THREE.Object3D | null = null;
+  let hoverPlaneHelper: THREE.Object3D | null = null;
 
   const listeners: Record<string, ((d: any) => void)[]> = {};
   function emit(event: string, data?: any) {
@@ -123,39 +138,142 @@ export function makeViewer(canvas: HTMLCanvasElement): ViewerAPI {
     'прочее': 1,
   };
 
-  function clearSelectedFace() {
-    if (faceHelper && faceHelper.parent) {
-      faceHelper.parent.remove(faceHelper);
-      (faceHelper as any).traverse?.((child: any) => {
+  function disposeHelper(helper: THREE.Object3D | null) {
+    if (helper && helper.parent) {
+      helper.parent.remove(helper);
+      (helper as any).traverse?.((child: any) => {
         if (child.geometry) child.geometry.dispose();
         if (child.material) child.material.dispose();
       });
     }
-    faceHelper = null;
+  }
+
+  function clearHoverPlane() {
+    disposeHelper(hoverPlaneHelper);
+    hoverPlaneHelper = null;
+  }
+
+  function clearSelectedPlane() {
+    disposeHelper(selectedPlaneHelper);
+    selectedPlaneHelper = null;
     if (selectedPlane) {
       selectedPlane = null;
-      emit('face-selected', null);
+      emit('plane-selected', null);
     }
   }
 
-  function highlightFace(hit: THREE.Intersection) {
-    if (!hit.face) return;
-    clearSelectedFace();
+  function clearHoverBody() {
+    disposeHelper(hoverBodyHelper);
+    hoverBodyHelper = null;
+  }
 
-    const mesh = hit.object as THREE.Mesh;
+  function clearSelectedBody() {
+    disposeHelper(selectedBodyHelper);
+    selectedBodyHelper = null;
+    if (selected) {
+      selected = null;
+      gizmo.detach();
+      emit('selection-changed', []);
+    }
+  }
+
+  function getTopObject(obj: THREE.Object3D): THREE.Object3D {
+    let top: THREE.Object3D = obj;
+    while (top.parent && top.parent !== objectsGroup && top.parent !== scene) {
+      top = top.parent;
+    }
+    return top;
+  }
+
+  function buildPlaneHelper(
+    mesh: THREE.Mesh,
+    faceIndex: number,
+  ): { helper: THREE.Object3D; faceIds: number[]; normal: THREE.Vector3 } | null {
     const geom = mesh.geometry as THREE.BufferGeometry;
-    const pos = geom.attributes.position as THREE.BufferAttribute;
-    const a = new THREE.Vector3().fromBufferAttribute(pos, hit.face.a);
-    const b = new THREE.Vector3().fromBufferAttribute(pos, hit.face.b);
-    const c = new THREE.Vector3().fromBufferAttribute(pos, hit.face.c);
-    const faceGeom = new THREE.BufferGeometry();
-    faceGeom.setAttribute(
-      'position',
-      new THREE.Float32BufferAttribute([...a.toArray(), ...b.toArray(), ...c.toArray()], 3),
-    );
-    faceGeom.setIndex([0, 1, 2]);
-
-    const mat = new THREE.MeshBasicMaterial({
+    const pos = geom.getAttribute('position') as THREE.BufferAttribute;
+    const index = geom.index ? geom.index.array : undefined;
+    const triCount = index ? index.length / 3 : pos.count / 3;
+    const getFace = (fi: number) =>
+      index
+        ? [index[fi * 3], index[fi * 3 + 1], index[fi * 3 + 2]]
+        : [fi * 3, fi * 3 + 1, fi * 3 + 2];
+    const getVert = (i: number) => new THREE.Vector3().fromBufferAttribute(pos, i);
+    const [ia, ib, ic] = getFace(faceIndex);
+    const a = getVert(ia);
+    const b = getVert(ib);
+    const c = getVert(ic);
+    const baseNormal = new THREE.Triangle(a, b, c).getNormal(new THREE.Vector3());
+    const baseConstant = -baseNormal.dot(a);
+    const cosTol = Math.cos(THREE.MathUtils.degToRad(2));
+    const distTol = 1e-4;
+    const faceIds: number[] = [];
+    const edges = new Map<string, number>();
+    const va = new THREE.Vector3();
+    const vb = new THREE.Vector3();
+    const vc = new THREE.Vector3();
+    const n = new THREE.Vector3();
+    function addEdge(i1: number, i2: number) {
+      const key = i1 < i2 ? `${i1},${i2}` : `${i2},${i1}`;
+      edges.set(key, (edges.get(key) || 0) + 1);
+    }
+    for (let f = 0; f < triCount; f++) {
+      const [i1, i2, i3] = getFace(f);
+      va.fromBufferAttribute(pos, i1);
+      vb.fromBufferAttribute(pos, i2);
+      vc.fromBufferAttribute(pos, i3);
+      new THREE.Triangle(va, vb, vc).getNormal(n);
+      if (n.dot(baseNormal) >= cosTol) {
+        const constant = -n.dot(va);
+        if (Math.abs(constant - baseConstant) <= distTol) {
+          faceIds.push(f);
+          addEdge(i1, i2);
+          addEdge(i2, i3);
+          addEdge(i3, i1);
+        }
+      }
+    }
+    const adj = new Map<number, number[]>();
+    edges.forEach((count, key) => {
+      if (count === 1) {
+        const [s1, s2] = key.split(',').map(Number);
+        if (!adj.has(s1)) adj.set(s1, []);
+        if (!adj.has(s2)) adj.set(s2, []);
+        (adj.get(s1) as number[]).push(s2);
+        (adj.get(s2) as number[]).push(s1);
+      }
+    });
+    const start = adj.keys().next().value as number | undefined;
+    if (start === undefined) return null;
+    const outlineIdx: number[] = [start];
+    let prev = -1;
+    while (true) {
+      const cur = outlineIdx[outlineIdx.length - 1];
+      const neighbors = adj.get(cur) || [];
+      const next = neighbors.find((v) => v !== prev);
+      if (next === undefined || next === start) break;
+      outlineIdx.push(next);
+      prev = cur;
+    }
+    const outlineVerts = outlineIdx.map((i) => getVert(i));
+    const planeOrigin = a.clone();
+    const u = new THREE.Vector3(1, 0, 0);
+    if (Math.abs(u.dot(baseNormal)) > 0.9) u.set(0, 1, 0);
+    u.cross(baseNormal).normalize();
+    const v = baseNormal.clone().cross(u).normalize();
+    const pts2d = outlineVerts.map((p) => {
+      const vec = p.clone().sub(planeOrigin);
+      return new THREE.Vector2(vec.dot(u), vec.dot(v));
+    });
+    const shape = new THREE.Shape();
+    shape.moveTo(pts2d[0].x, pts2d[0].y);
+    for (let i = 1; i < pts2d.length; i++) shape.lineTo(pts2d[i].x, pts2d[i].y);
+    const shapeGeom = new THREE.ShapeGeometry(shape);
+    const m = new THREE.Matrix4();
+    m.makeBasis(u, v, baseNormal);
+    m.setPosition(planeOrigin);
+    shapeGeom.applyMatrix4(m);
+    const outlineGeom = new THREE.BufferGeometry().setFromPoints(outlineVerts);
+    const fillMat = new THREE.MeshBasicMaterial({
       color: 0xffff00,
       side: THREE.DoubleSide,
       transparent: true,
@@ -166,84 +284,148 @@ export function makeViewer(canvas: HTMLCanvasElement): ViewerAPI {
       color: 0x000000,
       depthTest: false,
     });
-    const fill = new THREE.Mesh(faceGeom, mat);
-    const outline = new THREE.LineLoop(faceGeom, lineMat);
+    const fill = new THREE.Mesh(shapeGeom, fillMat);
+    const outline = new THREE.LineLoop(outlineGeom, lineMat);
     fill.renderOrder = 1000;
     outline.renderOrder = 1001;
     const helper = new THREE.Group();
     helper.add(fill);
     helper.add(outline);
     (helper as any).raycast = () => {};
-    mesh.add(helper);
-    faceHelper = helper;
+    return { helper, faceIds, normal: baseNormal.clone() };
+  }
 
-    const normal = hit.face.normal
-      .clone()
-      .transformDirection(mesh.matrixWorld)
-      .normalize();
+  function hoverPlane(hit: THREE.Intersection | null) {
+    clearHoverPlane();
+    if (!hit || !hit.face) return;
+    const mesh = hit.object as THREE.Mesh;
+    const res = buildPlaneHelper(mesh, hit.faceIndex ?? 0);
+    if (!res) return;
+    mesh.add(res.helper);
+    hoverPlaneHelper = res.helper;
+  }
+
+  function selectPlane(hit: THREE.Intersection) {
+    if (!hit.face) {
+      clearSelectedPlane();
+      return;
+    }
+    const mesh = hit.object as THREE.Mesh;
+    const res = buildPlaneHelper(mesh, hit.faceIndex ?? 0);
+    if (!res) return;
+    clearSelectedPlane();
+    mesh.add(res.helper);
+    selectedPlaneHelper = res.helper;
     selectedPlane = {
-      objectId: (() => {
-        let top: THREE.Object3D = mesh;
-        while (top.parent && top.parent !== objectsGroup && top.parent !== scene) {
-          top = top.parent;
-        }
-        return top.uuid;
-      })(),
-      faceIndex: hit.faceIndex ?? 0,
+      objectId: getTopObject(mesh).uuid,
+      faceIds: res.faceIds,
       origin: hit.point.clone(),
-      normal,
+      normal: res.normal
+        .clone()
+        .transformDirection(mesh.matrixWorld)
+        .normalize(),
     };
-    emit('face-selected', {
+    emit('plane-selected', {
       objectId: selectedPlane.objectId,
-      faceIndex: selectedPlane.faceIndex,
+      faceIds: [...selectedPlane.faceIds],
       origin: selectedPlane.origin.clone(),
       normal: selectedPlane.normal.clone(),
     });
   }
 
-  picker.onSingle((hit) => {
-    if (isDragging) return;
-    const overGizmo = ((gizmo as any).axis ?? null) !== null;
-    if (overGizmo) return;
-    if (hit) {
-      highlightFace(hit);
-    } else {
-      clearSelectedFace();
-    }
-  });
+  function getFirstMesh(obj: THREE.Object3D): THREE.Mesh | null {
+    let res: THREE.Mesh | null = null;
+    obj.traverse((child) => {
+      if (res) return;
+      if ((child as THREE.Mesh).isMesh) res = child as THREE.Mesh;
+    });
+    return res;
+  }
 
-  picker.onDouble((obj) => {
-    if (isDragging) return;
-    const overGizmo = ((gizmo as any).axis ?? null) !== null;
-    if (overGizmo) return;
-    if (obj) {
-      selectObject(obj);
-    } else {
-      detachSelection();
-    }
-    clearSelectedFace();
-  });
+  function addBodyHelper(obj: THREE.Object3D): THREE.Object3D | null {
+    const mesh = getFirstMesh(obj);
+    if (!mesh) return null;
+    const geom = new THREE.EdgesGeometry(mesh.geometry as THREE.BufferGeometry);
+    const mat = new THREE.LineBasicMaterial({ color: 0xffff00, depthTest: false });
+    const lines = new THREE.LineSegments(geom, mat);
+    lines.renderOrder = 1000;
+    (lines as any).raycast = () => {};
+    mesh.add(lines);
+    return lines;
+  }
+
+  function hoverBody(hit: THREE.Intersection | null) {
+    clearHoverBody();
+    if (!hit) return;
+    const top = getTopObject(hit.object);
+    if (selected && top === selected) return;
+    const helper = addBodyHelper(top);
+    if (helper) hoverBodyHelper = helper;
+  }
 
   function selectObject(obj: THREE.Object3D) {
-    let top: THREE.Object3D = obj;
-    while (top.parent && top.parent !== objectsGroup && top.parent !== scene) {
-      top = top.parent;
-    }
+    const top = getTopObject(obj);
+    clearSelectedBody();
     selected = top;
-    gizmo.attach(selected);
-    gizmo.enabled = !(selected as any).userData?.locked;
+    selectedBodyHelper = addBodyHelper(top);
+    if (transformMode) {
+      gizmo.attach(selected);
+      gizmo.setMode(transformMode);
+      gizmo.enabled = !(selected as any).userData?.locked;
+    } else {
+      gizmo.detach();
+    }
     emit('selection-changed', [selected.uuid]);
   }
 
   function detachSelection() {
-    selected = null;
-    gizmo.detach();
-    emit('selection-changed', []);
-    clearSelectedFace();
+    clearSelectedPlane();
+    clearSelectedBody();
   }
+
+  function setSelectionMode(mode: 'planes' | 'bodies') {
+    if (selectionMode === mode) return;
+    selectionMode = mode;
+    clearHoverPlane();
+    clearHoverBody();
+    detachSelection();
+  }
+
+  picker.onHover((hit) => {
+    if (isDragging) return;
+    if (selectionMode === 'planes') {
+      hoverPlane(hit);
+      clearHoverBody();
+    } else {
+      hoverBody(hit);
+      clearHoverPlane();
+    }
+  });
+
+  picker.onClick((hit) => {
+    if (isDragging) return;
+    const overGizmo = ((gizmo as any).axis ?? null) !== null;
+    if (overGizmo) return;
+    if (selectionMode === 'planes') {
+      if (hit) {
+        selectPlane(hit);
+        clearSelectedBody();
+      } else {
+        clearSelectedPlane();
+      }
+    } else {
+      if (hit) {
+        selectObject(hit.object);
+        clearSelectedPlane();
+      } else {
+        detachSelection();
+      }
+    }
+  });
 
   function addAndSelect(mesh: THREE.Object3D) {
     objectsGroup.add(mesh);
+    clearSelectedPlane();
     selectObject(mesh);
     emit('object-added', mesh.uuid);
     emit('updated');
@@ -274,13 +456,28 @@ export function makeViewer(canvas: HTMLCanvasElement): ViewerAPI {
   }
 
   function setModeTranslate() {
+    transformMode = 'translate';
     gizmo.setMode('translate');
+    if (selected) {
+      gizmo.attach(selected);
+      gizmo.enabled = !(selected as any).userData?.locked;
+    }
   }
   function setModeRotate() {
+    transformMode = 'rotate';
     gizmo.setMode('rotate');
+    if (selected) {
+      gizmo.attach(selected);
+      gizmo.enabled = !(selected as any).userData?.locked;
+    }
   }
   function setModeScale() {
+    transformMode = 'scale';
     gizmo.setMode('scale');
+    if (selected) {
+      gizmo.attach(selected);
+      gizmo.enabled = !(selected as any).userData?.locked;
+    }
   }
 
   function findById(id: string): THREE.Object3D | undefined {
@@ -306,6 +503,8 @@ export function makeViewer(canvas: HTMLCanvasElement): ViewerAPI {
   function getSelectedPlane() {
     if (!selectedPlane) return null;
     return {
+      objectId: selectedPlane.objectId,
+      faceIds: [...selectedPlane.faceIds],
       origin: selectedPlane.origin.clone(),
       normal: selectedPlane.normal.clone(),
     };
@@ -317,14 +516,18 @@ export function makeViewer(canvas: HTMLCanvasElement): ViewerAPI {
       return;
     }
     const obj = findById(ids[0]);
-    if (obj) selectObject(obj);
+    if (obj) {
+      clearSelectedPlane();
+      selectObject(obj);
+    }
   }
 
   function setVisible(id: string, v: boolean) {
     const obj = findById(id);
     if (!obj) return;
     obj.visible = v;
-    if (selectedPlane && selectedPlane.objectId === id) clearSelectedFace();
+    if (selected && selected.uuid === id) detachSelection();
+    if (selectedPlane && selectedPlane.objectId === id) clearSelectedPlane();
     emit('updated');
   }
 
@@ -348,7 +551,7 @@ export function makeViewer(canvas: HTMLCanvasElement): ViewerAPI {
     if (!obj || !obj.parent) return;
     obj.parent.remove(obj);
     if (selected && selected.uuid === id) detachSelection();
-    if (selectedPlane && selectedPlane.objectId === id) clearSelectedFace();
+    if (selectedPlane && selectedPlane.objectId === id) clearSelectedPlane();
     emit('object-removed', id);
     emit('updated');
   }
@@ -376,6 +579,7 @@ export function makeViewer(canvas: HTMLCanvasElement): ViewerAPI {
     setModeRotate,
     setModeScale,
     detachSelection,
+    setSelectionMode,
     getSceneGraph,
     on,
     getSelectedPlane,

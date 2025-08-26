@@ -7,13 +7,8 @@ export function attachSelection(
 ) {
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
-  const dblDelay = 200;
-
-  let singleCb: (hit: THREE.Intersection | null) => void = () => {};
-  let doubleCb: (obj: THREE.Object3D | null) => void = () => {};
-
-  let clickTimer: ReturnType<typeof setTimeout> | null = null;
-  let lastHit: THREE.Intersection | null = null;
+  let hoverCb: (hit: THREE.Intersection | null) => void = () => {};
+  let clickCb: (hit: THREE.Intersection | null) => void = () => {};
 
   function getHit(e: PointerEvent): THREE.Intersection | null {
     const rect = canvas.getBoundingClientRect();
@@ -23,39 +18,23 @@ export function attachSelection(
     const hits = raycaster.intersectObjects(root.children, true);
     return hits.length > 0 ? hits[0] : null;
   }
-
-  function onPointerDown(e: PointerEvent) {
-    const hit = getHit(e);
-    if (
-      clickTimer &&
-      lastHit &&
-      hit &&
-      lastHit.object === hit.object
-    ) {
-      clearTimeout(clickTimer);
-      clickTimer = null;
-      lastHit = null;
-      doubleCb(hit.object);
-      return;
-    }
-
-    lastHit = hit;
-    if (clickTimer) clearTimeout(clickTimer);
-    clickTimer = setTimeout(() => {
-      singleCb(lastHit);
-      lastHit = null;
-      clickTimer = null;
-    }, dblDelay);
+  function onPointerMove(e: PointerEvent) {
+    hoverCb(getHit(e));
   }
 
+  function onPointerDown(e: PointerEvent) {
+    clickCb(getHit(e));
+  }
+
+  canvas.addEventListener('pointermove', onPointerMove);
   canvas.addEventListener('pointerdown', onPointerDown);
 
   return {
-    onSingle(cb: (hit: THREE.Intersection | null) => void) {
-      singleCb = cb;
+    onHover(cb: (hit: THREE.Intersection | null) => void) {
+      hoverCb = cb;
     },
-    onDouble(cb: (obj: THREE.Object3D | null) => void) {
-      doubleCb = cb;
+    onClick(cb: (hit: THREE.Intersection | null) => void) {
+      clickCb = cb;
     },
   };
 }

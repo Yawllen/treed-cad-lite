@@ -27,6 +27,15 @@ document.getElementById('btn-cube')?.addEventListener('click', () => viewer.addC
 document.getElementById('btn-sphere')?.addEventListener('click', () => viewer.addSphere());
 document.getElementById('btn-cylinder')?.addEventListener('click', () => viewer.addCylinder());
 
+// Селектор режима выбора: плоскости или тела
+const modeSel = document.getElementById('mode-select') as HTMLSelectElement | null;
+if (modeSel) {
+  viewer.setSelectionMode((modeSel.value as 'planes' | 'bodies') || 'planes');
+  modeSel.addEventListener('change', () =>
+    viewer.setSelectionMode(modeSel.value as 'planes' | 'bodies'),
+  );
+}
+
 // Горячие клавиши: W — перемещение, E — поворот, R — масштаб, Esc — снять выделение
 document.addEventListener('keydown', (e) => {
   const tag = (document.activeElement && (document.activeElement as HTMLElement).tagName) || '';
