@@ -16,20 +16,22 @@
 }
 
 /* Убираем все отступы у body и растягиваем на весь экран */
-html, body {
+html,
+body {
   margin: 0;
   padding: 0;
-  width: 100%;
-  height: 100%;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
 }
 
 /* Канва занимает всё окно браузера */
 canvas#app {
-  position: absolute;
+  position: fixed;
   top: 50px;
   left: 0;
-  right: 0;
-  bottom: 0;
+  width: 100vw;
+  height: calc(100vh - 50px);
   display: block;
 }
 
