@@ -32,8 +32,13 @@ export function makeViewer(container: HTMLDivElement): Viewer {
 
   const grid = new THREE.GridHelper(600, 60, 0x2d2f53, 0x2d2f53)
   ;(grid.material as any).opacity = 0.5; (grid.material as any).transparent = true
+  grid.name = '__grid'
+  grid.userData.__helper = true
   scene.add(grid)
-  const axes = new THREE.AxesHelper(80); scene.add(axes)
+  const axes = new THREE.AxesHelper(80)
+  axes.name = '__axes'
+  ;(axes as any).userData.__helper = true
+  scene.add(axes)
 
   const amb = new THREE.AmbientLight(0xffffff, .6); scene.add(amb)
   const dir = new THREE.DirectionalLight(0xffffff, .8); dir.position.set(100,150,100); scene.add(dir)
@@ -46,6 +51,15 @@ export function makeViewer(container: HTMLDivElement): Viewer {
   scene.add(transform)
 
   const selection = { current: null as THREE.Object3D | null }
+
+  function isInsideTransformControls(obj: THREE.Object3D): boolean {
+    let p: any = obj
+    while (p) {
+      if (p.isTransformControls) return true
+      p = p.parent
+    }
+    return false
+  }
 
   function setSelection(o: THREE.Object3D | null) {
     selection.current = o
@@ -60,8 +74,28 @@ export function makeViewer(container: HTMLDivElement): Viewer {
     const pointer = new THREE.Vector2(x, y)
     const ray = new THREE.Raycaster()
     ray.setFromCamera(pointer, camera)
-    const hits = ray.intersectObjects(scene.children, true).filter(h => (h.object as any).isMesh)
+    const hits = ray.intersectObjects(scene.children, true).filter(h => {
+      const o: any = h.object
+      if (!o.isMesh) return false
+      if (o.userData?.__helper) return false
+      if (isInsideTransformControls(o)) return false
+      return true
+    })
     setSelection(hits[0]?.object ?? null)
+  })
+
+  renderer.domElement.addEventListener('pointermove', (ev) => {
+    const rect = renderer.domElement.getBoundingClientRect()
+    const x = ((ev.clientX - rect.left) / rect.width) * 2 - 1
+    const y = -((ev.clientY - rect.top) / rect.height) * 2 + 1
+    const pointer = new THREE.Vector2(x, y)
+    const ray = new THREE.Raycaster()
+    ray.setFromCamera(pointer, camera)
+    const overPickable = ray.intersectObjects(scene.children, true).some(h => {
+      const o: any = h.object
+      return o.isMesh && !o.userData?.__helper && !isInsideTransformControls(o)
+    })
+    renderer.domElement.style.cursor = overPickable ? 'pointer' : 'default'
   })
 
   window.addEventListener('keydown', (e) => {
@@ -72,6 +106,7 @@ export function makeViewer(container: HTMLDivElement): Viewer {
 
   transform.addEventListener('dragging-changed', (e:any) => {
     orbit.enabled = !e.value
+    if (e.value) renderer.domElement.style.cursor = 'default'
   })
 
   const cbs = new Set<() => void>()
