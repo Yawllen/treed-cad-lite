@@ -8,8 +8,7 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:watch": "vitest",
-    "postinstall": "node scripts/ensure-three-extrude.mjs"
+    "test:watch": "vitest"
   },
   "dependencies": {
     "idb": "^8.0.0",
