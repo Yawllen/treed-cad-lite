@@ -51,6 +51,7 @@ export function makeViewer(container: HTMLDivElement): Viewer {
   scene.add(transform)
 
   const selection = { current: null as THREE.Object3D | null }
+  let outline: THREE.LineSegments | null = null
 
   function isInsideTransformControls(obj: THREE.Object3D): boolean {
     let p: any = obj
@@ -61,9 +62,36 @@ export function makeViewer(container: HTMLDivElement): Viewer {
     return false
   }
 
+  function detachOutline() {
+    if (!outline) return
+    const parent = outline.parent as THREE.Object3D | null
+    outline.geometry.dispose()
+    ;(outline.material as THREE.Material).dispose()
+    if (parent) parent.remove(outline)
+    outline = null
+  }
+
+  function attachOutline(target: THREE.Mesh) {
+    detachOutline()
+    const geom = target.geometry as THREE.BufferGeometry
+    const edges = new THREE.EdgesGeometry(geom)
+    const mat = new THREE.LineBasicMaterial({ color: 0xffffff, depthTest: false, transparent: true, opacity: 0.85 })
+    outline = new THREE.LineSegments(edges, mat)
+    outline.name = '__outline'
+    ;(outline as any).userData.__helper = true
+    target.add(outline)
+  }
+
   function setSelection(o: THREE.Object3D | null) {
     selection.current = o
-    if (o) { transform.attach(o) } else { transform.detach() }
+    if (o) {
+      transform.attach(o)
+      if ((o as any).isMesh) attachOutline(o as THREE.Mesh)
+      else detachOutline()
+    } else {
+      transform.detach()
+      detachOutline()
+    }
     fireChange()
   }
 
@@ -136,6 +164,7 @@ export function makeViewer(container: HTMLDivElement): Viewer {
     alive = false
     ro.disconnect()
     renderer.dispose()
+    detachOutline()
     container.innerHTML = ''
   }
 
