@@ -17,6 +17,9 @@ export default function ShortcutsOverlay({ open, onClose }: Props) {
           <li><kbd>Ctrl</kbd>+<kbd>D</kbd> — дубликат</li>
           <li><kbd>F</kbd> — Fit (выделение или вся сцена)</li>
           <li><kbd>X</kbd> — включить/выключить привязку (Snap)</li>
+          <li><kbd>⇧G</kbd> — Align to Ground</li>
+          <li><kbd>⇧C</kbd> — Center XZ</li>
+          <li><kbd>⇧R</kbd> — Reset transforms</li>
           <li><kbd>?</kbd> — показать/скрыть это окно</li>
         </ul>
       </div>

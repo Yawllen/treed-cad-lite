@@ -14,9 +14,12 @@ const App: React.FC = () => {
   const mountRef = useRef<HTMLDivElement>(null)
   const [viewer, setViewer] = useState<Viewer | null>(null)
   const [showTips, setShowTips] = useState(false)
+  const syncingSceneRef = useRef(false)
+  const skipSceneSyncRef = useRef(false)
   const nodes = useFeatureTree(s => s.nodes)
   const addNode = useFeatureTree(s => s.add)
   const removeByUUID = useFeatureTree(s => s.removeByUUID)
+  const updateTransform = useFeatureTree(s => s.updateTransform)
   const undo = useFeatureTree(s => s.undo)
   const redo = useFeatureTree(s => s.redo)
   const loadTree = useFeatureTree(s => s.load)
@@ -45,6 +48,15 @@ const App: React.FC = () => {
     }
   }
 
+  function trsEquals(a?: TRS, b?: TRS){
+    if (!a || !b) return false
+    return (
+      a.position.every((v, i) => v === b.position[i]) &&
+      a.rotation.every((v, i) => v === b.rotation[i]) &&
+      a.scale.every((v, i) => v === b.scale[i])
+    )
+  }
+
   const applyTRS = React.useCallback((m: THREE.Object3D, t?: TRS) => {
     if (!t) return
     m.position.set(...t.position)
@@ -62,6 +74,20 @@ const App: React.FC = () => {
     applyTRS(mesh, n.transform)
     return mesh
   }, [applyTRS])
+
+  const snapshotSelectedToStore = React.useCallback((triggerInvalidate = false) => {
+    if (!viewer) return
+    const sel = viewer.getSelection()
+    if (!sel) return
+    const trs = meshToTRS(sel)
+    const state = useFeatureTree.getState()
+    const node = state.nodes.find(n => n.uuid === sel.uuid)
+    if (!node) return
+    if (node.transform && trsEquals(node.transform, trs)) return
+    skipSceneSyncRef.current = true
+    updateTransform(sel.uuid, trs)
+    if (triggerInvalidate) viewer.invalidate()
+  }, [viewer, updateTransform])
 
   const duplicateSelected = React.useCallback(() => {
     if (!viewer) return
@@ -105,24 +131,29 @@ const App: React.FC = () => {
     const actualViewer = targetViewer ?? viewer
     if (!actualViewer) return
 
-    const prevSelectionId = actualViewer.selection.current?.uuid ?? null
-    const toRemove: THREE.Object3D[] = []
-    actualViewer.scene.traverse((o: any) => {
-      if (o.isMesh && !isHelper(o)) toRemove.push(o)
-    })
-    toRemove.forEach(o => actualViewer.remove(o))
+    syncingSceneRef.current = true
+    try {
+      const prevSelectionId = actualViewer.selection.current?.uuid ?? null
+      const toRemove: THREE.Object3D[] = []
+      actualViewer.scene.traverse((o: any) => {
+        if (o.isMesh && !isHelper(o)) toRemove.push(o)
+      })
+      toRemove.forEach(o => actualViewer.remove(o))
 
-    for (const n of targetNodes) {
-      const mesh = buildMeshFromNode(n)
-      actualViewer.addMesh(mesh, { select: false })
-    }
+      for (const n of targetNodes) {
+        const mesh = buildMeshFromNode(n)
+        actualViewer.addMesh(mesh, { select: false })
+      }
 
-    if (prevSelectionId) {
-      const next = actualViewer.scene.getObjectByProperty('uuid', prevSelectionId) as THREE.Object3D | null
-      if (next && (next as any).isMesh) actualViewer.select(next)
-      else actualViewer.select(null)
-    } else {
-      actualViewer.select(null)
+      if (prevSelectionId) {
+        const next = actualViewer.scene.getObjectByProperty('uuid', prevSelectionId) as THREE.Object3D | null
+        if (next && (next as any).isMesh) actualViewer.select(next)
+        else actualViewer.select(null)
+      } else {
+        actualViewer.select(null)
+      }
+    } finally {
+      syncingSceneRef.current = false
     }
   }, [viewer, buildMeshFromNode])
 
@@ -161,6 +192,15 @@ const App: React.FC = () => {
     viewer.setSnapToggleHandler(toggle)
     return () => viewer.setSnapToggleHandler(null)
   }, [viewer, setSnapEnabled])
+
+  useEffect(() => {
+    if (!viewer) return
+    const unsub = viewer.onChange(() => {
+      if (syncingSceneRef.current) return
+      snapshotSelectedToStore()
+    })
+    return () => unsub()
+  }, [viewer, snapshotSelectedToStore])
 
   useEffect(() => {
     function onKey(e: KeyboardEvent){
@@ -207,6 +247,10 @@ const App: React.FC = () => {
   }, [showTips])
 
   useEffect(() => {
+    if (skipSceneSyncRef.current) {
+      skipSceneSyncRef.current = false
+      return
+    }
     syncSceneToNodes()
   }, [nodes, syncSceneToNodes])
 
@@ -294,6 +338,9 @@ const App: React.FC = () => {
           <button className="btn" onClick={onSaveJSON}>Save (.json)</button>
           <button className="btn" onClick={onLoadJSON}>Load (.json)</button>
           <button className="btn" onClick={duplicateSelected}>Duplicate (Ctrl+D)</button>
+          <button className="btn" onClick={() => { viewer?.alignSelectionToGround(); snapshotSelectedToStore(true) }}>Ground (⇧G)</button>
+          <button className="btn" onClick={() => { viewer?.centerSelectionXZ(); snapshotSelectedToStore(true) }}>Center XZ (⇧C)</button>
+          <button className="btn" onClick={() => { viewer?.resetSelectionTRS(); snapshotSelectedToStore(true) }}>Reset (⇧R)</button>
           <button className="btn" onClick={() => viewer?.fitSelectionOrAll()}>Fit (F)</button>
           <button className="btn" onClick={() => setShowTips(true)}>?</button>
           {/* без экспортов под 3D печать */}

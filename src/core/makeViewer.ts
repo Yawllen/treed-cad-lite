@@ -16,6 +16,9 @@ export type Viewer = {
   getSelection: () => THREE.Object3D | null
   setSelection: (o: THREE.Object3D | null) => void
   fitSelectionOrAll: () => void
+  alignSelectionToGround: () => void
+  centerSelectionXZ: () => void
+  resetSelectionTRS: () => void
   onChange: (cb: () => void) => () => void
   invalidate: () => void
   applySnap: (opts: { enabled: boolean; move: number; rotDeg: number; scale: number }) => void
@@ -199,6 +202,37 @@ export function makeViewer(container: HTMLDivElement): Viewer {
     fitToBox(box)
   }
 
+  function alignSelectionToGround(){
+    const sel = selection.current as THREE.Object3D | null
+    if (!sel || !(sel as any).isObject3D) return
+    const box = new THREE.Box3().setFromObject(sel)
+    const dy = box.min.y
+    if (!Number.isFinite(dy)) return
+    sel.position.y -= dy
+    fireChange()
+  }
+
+  function centerSelectionXZ(){
+    const sel = selection.current as THREE.Object3D | null
+    if (!sel || !(sel as any).isObject3D) return
+    const box = new THREE.Box3().setFromObject(sel)
+    const cx = (box.min.x + box.max.x) / 2
+    const cz = (box.min.z + box.max.z) / 2
+    if (!Number.isFinite(cx) || !Number.isFinite(cz)) return
+    sel.position.x -= cx
+    sel.position.z -= cz
+    fireChange()
+  }
+
+  function resetSelectionTRS(){
+    const sel = selection.current as THREE.Object3D | null
+    if (!sel || !(sel as any).isObject3D) return
+    sel.position.set(0, 0, 0)
+    sel.rotation.set(0, 0, 0, 'XYZ')
+    sel.scale.set(1, 1, 1)
+    fireChange()
+  }
+
   function applySnap(p: { enabled: boolean; move: number; rotDeg: number; scale: number }){
     if (p.enabled){
       transform.translationSnap = p.move
@@ -213,11 +247,14 @@ export function makeViewer(container: HTMLDivElement): Viewer {
   }
 
   window.addEventListener('keydown', (e) => {
-    if (e.key.toLowerCase() === 'g') transform.setMode('translate')
-    if (e.key.toLowerCase() === 'r') transform.setMode('rotate')
-    if (e.key.toLowerCase() === 's') transform.setMode('scale')
+    if (!e.shiftKey && e.key.toLowerCase() === 'g') transform.setMode('translate')
+    if (!e.shiftKey && e.key.toLowerCase() === 'r') transform.setMode('rotate')
+    if (!e.shiftKey && e.key.toLowerCase() === 's') transform.setMode('scale')
     if (e.key.toLowerCase() === 'f') { e.preventDefault(); fitSelectionOrAll() }
     if (e.key.toLowerCase() === 'x') { e.preventDefault(); toggleSnap?.() }
+    if (e.shiftKey && e.key.toLowerCase() === 'g') { e.preventDefault(); alignSelectionToGround() }
+    if (e.shiftKey && e.key.toLowerCase() === 'c') { e.preventDefault(); centerSelectionXZ() }
+    if (e.shiftKey && e.key.toLowerCase() === 'r') { e.preventDefault(); resetSelectionTRS() }
   })
 
   transform.addEventListener('dragging-changed', (e:any) => {
@@ -281,6 +318,9 @@ export function makeViewer(container: HTMLDivElement): Viewer {
     getSelection,
     setSelection: setSelectionPublic,
     fitSelectionOrAll,
+    alignSelectionToGround,
+    centerSelectionXZ,
+    resetSelectionTRS,
     onChange,
     invalidate,
     applySnap,
