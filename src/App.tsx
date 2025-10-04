@@ -10,8 +10,10 @@ import ShortcutsOverlay from './ui/ShortcutsOverlay'
 import SelectionInspector from './ui/SelectionInspector'
 import SnapPanel from './ui/SnapPanel'
 import ArrayPanel from './ui/ArrayPanel'
+import MirrorPanel from './ui/MirrorPanel'
 
 type Axis = 'x' | 'y' | 'z'
+type Mode = 'copy' | 'flip'
 
 const App: React.FC = () => {
   const mountRef = useRef<HTMLDivElement>(null)
@@ -34,6 +36,7 @@ const App: React.FC = () => {
   const scaleSnap = usePrefs(s => s.scaleSnap)
   const setSnapEnabled = usePrefs(s => s.setEnabled)
   const [lastArrayCfg, setLastArrayCfg] = useState<{ count: number; spacing: number; axis: Axis }>({ count: 5, spacing: 30, axis: 'x' })
+  const [lastMirror, setLastMirror] = useState<{ axis: Axis; mode: Mode }>({ axis: 'x', mode: 'copy' })
 
   const deleteSelected = React.useCallback(() => {
     if (!viewer) return
@@ -136,6 +139,56 @@ const App: React.FC = () => {
     setLastArrayCfg(cfg)
     createArrayFromSelection(cfg)
   }, [createArrayFromSelection])
+
+  const mirrorTRS = React.useCallback((trs: TRS, axis: Axis): TRS => {
+    const position = [...trs.position] as TRS['position']
+    const index = axis === 'x' ? 0 : axis === 'y' ? 1 : 2
+    position[index] = -position[index]
+    return {
+      position,
+      rotation: [...trs.rotation] as TRS['rotation'],
+      scale: [...trs.scale] as TRS['scale'],
+    }
+  }, [])
+
+  const mirrorSelection = React.useCallback((cfg: { axis: Axis; mode: Mode }) => {
+    if (!viewer) return
+    const sel = viewer.getSelection()
+    if (!sel) return
+
+    const node = nodes.find(n => n.uuid === sel.uuid)
+    if (!node) return
+
+    const base: TRS = node.transform ?? { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] }
+    const next = mirrorTRS(base, cfg.axis)
+
+    if (cfg.mode === 'flip') {
+      skipSceneSyncRef.current = true
+      updateTransform(sel.uuid, next)
+      applyTRS(sel, next)
+      viewer.invalidate()
+      return
+    }
+
+    const copy: Node = {
+      ...node,
+      uuid: globalThis.crypto?.randomUUID?.() ?? THREE.MathUtils.generateUUID(),
+      transform: next,
+    }
+
+    skipSceneSyncRef.current = true
+    addMany([copy])
+    const updatedNodes = useFeatureTree.getState().nodes
+    syncSceneToNodes(undefined, updatedNodes)
+    const obj = viewer.scene.getObjectByProperty('uuid', copy.uuid) as THREE.Object3D | null
+    if (obj) viewer.setSelection(obj)
+    viewer.invalidate()
+  }, [viewer, nodes, mirrorTRS, updateTransform, applyTRS, addMany, syncSceneToNodes])
+
+  const handleMirror = React.useCallback((cfg: { axis: Axis; mode: Mode }) => {
+    setLastMirror(cfg)
+    mirrorSelection(cfg)
+  }, [mirrorSelection])
 
   const duplicateSelected = React.useCallback(() => {
     if (!viewer) return
@@ -293,6 +346,17 @@ const App: React.FC = () => {
 
   useEffect(() => {
     function onKey(e: KeyboardEvent){
+      if (!e.ctrlKey && !e.metaKey && e.key.toLowerCase() === 'm') {
+        e.preventDefault()
+        handleMirror(lastMirror)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [handleMirror, lastMirror])
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent){
       if (e.key === 'Escape' && showTips) {
         setShowTips(false)
       }
@@ -425,6 +489,7 @@ const App: React.FC = () => {
       <div className="right">
         <SelectionInspector viewer={viewer} />
         <SnapPanel />
+        <MirrorPanel onMirror={handleMirror} />
         <ArrayPanel onCreate={handleCreateArray} />
         <div className="card">
           <h3>История</h3>
