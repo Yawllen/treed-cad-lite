@@ -9,6 +9,9 @@ import { saveProject, loadLastProject } from './core/persistence/db'
 import ShortcutsOverlay from './ui/ShortcutsOverlay'
 import SelectionInspector from './ui/SelectionInspector'
 import SnapPanel from './ui/SnapPanel'
+import ArrayPanel from './ui/ArrayPanel'
+
+type Axis = 'x' | 'y' | 'z'
 
 const App: React.FC = () => {
   const mountRef = useRef<HTMLDivElement>(null)
@@ -18,6 +21,7 @@ const App: React.FC = () => {
   const skipSceneSyncRef = useRef(false)
   const nodes = useFeatureTree(s => s.nodes)
   const addNode = useFeatureTree(s => s.add)
+  const addMany = useFeatureTree(s => s.addMany)
   const removeByUUID = useFeatureTree(s => s.removeByUUID)
   const updateTransform = useFeatureTree(s => s.updateTransform)
   const undo = useFeatureTree(s => s.undo)
@@ -29,6 +33,7 @@ const App: React.FC = () => {
   const rotSnapDeg = usePrefs(s => s.rotSnapDeg)
   const scaleSnap = usePrefs(s => s.scaleSnap)
   const setSnapEnabled = usePrefs(s => s.setEnabled)
+  const [lastArrayCfg, setLastArrayCfg] = useState<{ count: number; spacing: number; axis: Axis }>({ count: 5, spacing: 30, axis: 'x' })
 
   const deleteSelected = React.useCallback(() => {
     if (!viewer) return
@@ -88,6 +93,49 @@ const App: React.FC = () => {
     updateTransform(sel.uuid, trs)
     if (triggerInvalidate) viewer.invalidate()
   }, [viewer, updateTransform])
+
+  const findNodeByUUID = React.useCallback((id: string) => nodes.find(n => n.uuid === id), [nodes])
+
+  const buildNodeCopyWithOffset = React.useCallback((n: Node, i: number, axis: Axis, spacing: number): Node => {
+    const base = n.transform ?? { position: [0, 0, 0], rotation: [0, 0, 0], scale: [1, 1, 1] }
+    const position = [...base.position] as TRS['position']
+    const rotation = [...base.rotation] as TRS['rotation']
+    const scale = [...base.scale] as TRS['scale']
+    const axisIndex = axis === 'x' ? 0 : axis === 'y' ? 1 : 2
+    position[axisIndex] = position[axisIndex] + i * spacing
+    const uuid = globalThis.crypto?.randomUUID?.() ?? THREE.MathUtils.generateUUID()
+    return { ...n, uuid, transform: { position, rotation, scale } }
+  }, [])
+
+  const createArrayFromSelection = React.useCallback((cfg: { count: number; spacing: number; axis: Axis }) => {
+    if (!viewer) return
+    const sel = viewer.getSelection()
+    if (!sel) return
+    const src = findNodeByUUID(sel.uuid)
+    if (!src) return
+
+    const toAdd: Node[] = []
+    for (let i = 1; i < cfg.count; i += 1) {
+      toAdd.push(buildNodeCopyWithOffset(src, i, cfg.axis, cfg.spacing))
+    }
+    if (!toAdd.length) return
+
+    skipSceneSyncRef.current = true
+    addMany(toAdd)
+
+    const updatedNodes = useFeatureTree.getState().nodes
+    syncSceneToNodes(undefined, updatedNodes)
+
+    const lastUUID = toAdd[toAdd.length - 1].uuid
+    const obj = viewer.scene.getObjectByProperty('uuid', lastUUID) as THREE.Object3D | null
+    if (obj) viewer.setSelection(obj)
+    viewer.invalidate()
+  }, [viewer, findNodeByUUID, buildNodeCopyWithOffset, addMany, syncSceneToNodes])
+
+  const handleCreateArray = React.useCallback((cfg: { count: number; spacing: number; axis: Axis }) => {
+    setLastArrayCfg(cfg)
+    createArrayFromSelection(cfg)
+  }, [createArrayFromSelection])
 
   const duplicateSelected = React.useCallback(() => {
     if (!viewer) return
@@ -234,6 +282,17 @@ const App: React.FC = () => {
 
   useEffect(() => {
     function onKey(e: KeyboardEvent){
+      if (!e.ctrlKey && !e.metaKey && e.key.toLowerCase() === 'l') {
+        e.preventDefault()
+        handleCreateArray(lastArrayCfg)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [handleCreateArray, lastArrayCfg])
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent){
       if (e.key === 'Escape' && showTips) {
         setShowTips(false)
       }
@@ -366,6 +425,7 @@ const App: React.FC = () => {
       <div className="right">
         <SelectionInspector viewer={viewer} />
         <SnapPanel />
+        <ArrayPanel onCreate={handleCreateArray} />
         <div className="card">
           <h3>История</h3>
           <ul>{nodes.map(n => <li key={n.uuid}>{n.type}</li>)}</ul>

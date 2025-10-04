@@ -18,6 +18,7 @@ type State = {
   past: Node[][]
   future: Node[][]
   add: (n: Node) => void
+  addMany: (arr: Node[]) => void
   removeByUUID: (id: string) => void
   updateTransform: (id: string, trs: TRS) => void
   load: (data: { nodes: Node[] }) => void
@@ -46,6 +47,13 @@ export const useFeatureTree = create<State>((set, get) => ({
   add: (n) => set(produce((s: State) => {
     s.past.push(clone(s.nodes))
     s.nodes.push(n)
+    s.future = []
+  })),
+
+  addMany: (arr) => set(produce((s: State) => {
+    if (!arr.length) return
+    s.past.push(clone(s.nodes))
+    s.nodes.push(...arr.map(item => clone(item)))
     s.future = []
   })),
 
