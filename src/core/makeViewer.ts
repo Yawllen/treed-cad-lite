@@ -19,6 +19,7 @@ export type Viewer = {
   alignSelectionToGround: () => void
   centerSelectionXZ: () => void
   resetSelectionTRS: () => void
+  buildExportGroup: (selectionOnly?: boolean) => THREE.Group
   onChange: (cb: () => void) => () => void
   invalidate: () => void
   applySnap: (opts: { enabled: boolean; move: number; rotDeg: number; scale: number }) => void
@@ -159,6 +160,46 @@ export function makeViewer(container: HTMLDivElement): Viewer {
       if (o.isMesh && !isHelper(o)) list.push(o)
     })
     return list
+  }
+
+  function cloneMaterial(mat: THREE.Material | THREE.Material[]): THREE.Material | THREE.Material[] {
+    if (Array.isArray(mat)) {
+      return mat.map(m => (typeof m.clone === 'function' ? m.clone() : m))
+    }
+    return typeof mat.clone === 'function' ? mat.clone() : mat
+  }
+
+  function gatherExportMeshes(selectionOnly: boolean): THREE.Mesh[] {
+    const meshes: THREE.Mesh[] = []
+    const roots: THREE.Object3D[] = []
+    if (selectionOnly) {
+      if (selection.current && !isHelper(selection.current)) {
+        roots.push(selection.current)
+      }
+    } else {
+      roots.push(scene)
+    }
+    roots.forEach(root => {
+      root.traverse((obj: any) => {
+        if (obj.isMesh && !isHelper(obj)) meshes.push(obj as THREE.Mesh)
+      })
+    })
+    return meshes
+  }
+
+  function buildExportGroup(selectionOnly = false): THREE.Group {
+    scene.updateMatrixWorld(true)
+    const group = new THREE.Group()
+    const meshes = gatherExportMeshes(selectionOnly)
+    meshes.forEach(source => {
+      const geom = source.geometry.clone()
+      geom.applyMatrix4(source.matrixWorld)
+      const material = cloneMaterial(source.material)
+      const mesh = new THREE.Mesh(geom, material as any)
+      mesh.name = source.name
+      group.add(mesh)
+    })
+    return group
   }
 
   function calcFitDistance({ halfW, halfH, vFovRad, aspect, padding = 1.2 }:{
@@ -329,6 +370,7 @@ export function makeViewer(container: HTMLDivElement): Viewer {
     alignSelectionToGround,
     centerSelectionXZ,
     resetSelectionTRS,
+    buildExportGroup,
     onChange,
     invalidate,
     applySnap,

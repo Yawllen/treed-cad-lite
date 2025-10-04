@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
+import { STLExporter } from 'three/examples/jsm/exporters/STLExporter.js'
+import { ThreeMFExporter } from 'three/examples/jsm/exporters/3MFExporter.js'
 import { makeViewer, Viewer } from './core/makeViewer'
 import { createCube, createCylinder, createSphere, createExtruded } from './core/primitives'
 import type { Node, TRS } from './core/featureTree'
@@ -19,6 +21,8 @@ const App: React.FC = () => {
   const canvasRef = useRef<HTMLDivElement>(null)
   const [viewer, setViewer] = useState<Viewer | null>(null)
   const [showTips, setShowTips] = useState(false)
+  const stlExporterRef = useRef<STLExporter | null>(null)
+  const threeMFExporterRef = useRef<ThreeMFExporter | null>(null)
   const syncingSceneRef = useRef(false)
   const skipSceneSyncRef = useRef(false)
   const nodes = useFeatureTree(s => s.nodes)
@@ -449,6 +453,40 @@ const App: React.FC = () => {
     syncSceneToNodes()
   }
 
+  const downloadBlob = React.useCallback((blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [])
+
+  const exportSTL = React.useCallback((selectionOnly = false) => {
+    if (!viewer) return
+    const group = viewer.buildExportGroup(selectionOnly)
+    if (group.children.length === 0) return
+    const exporter = stlExporterRef.current ?? new STLExporter()
+    stlExporterRef.current = exporter
+    const result = exporter.parse(group, { binary: true })
+    const blob =
+      result instanceof ArrayBuffer
+        ? new Blob([result], { type: 'model/stl' })
+        : new Blob([result], { type: 'model/stl' })
+    downloadBlob(blob, selectionOnly ? 'selection.stl' : 'scene.stl')
+  }, [viewer, downloadBlob])
+
+  const export3MF = React.useCallback((selectionOnly = false) => {
+    if (!viewer) return
+    const group = viewer.buildExportGroup(selectionOnly)
+    if (group.children.length === 0) return
+    const exporter = threeMFExporterRef.current ?? new ThreeMFExporter()
+    threeMFExporterRef.current = exporter
+    const result = exporter.parse(group)
+    const blob = result instanceof Blob ? result : new Blob([result], { type: 'model/3mf' })
+    downloadBlob(blob, selectionOnly ? 'selection.3mf' : 'scene.3mf')
+  }, [viewer, downloadBlob])
+
   return (
     <div className="app">
       <div className="left">
@@ -472,6 +510,8 @@ const App: React.FC = () => {
           <button className="btn" onClick={onNew}>New</button>
           <button className="btn" onClick={onSaveJSON}>Save (.json)</button>
           <button className="btn" onClick={onLoadJSON}>Load (.json)</button>
+          <button className="btn" onClick={() => exportSTL(false)}>Export (.stl)</button>
+          <button className="btn" onClick={() => export3MF(false)}>Export (.3mf)</button>
           <button className="btn" onClick={duplicateSelected}>Duplicate (Ctrl+D)</button>
           <button className="btn" onClick={() => { viewer?.alignSelectionToGround(); snapshotSelectedToStore(true) }}>Ground (⇧G)</button>
           <button className="btn" onClick={() => { viewer?.centerSelectionXZ(); snapshotSelectedToStore(true) }}>Center XZ (⇧C)</button>
