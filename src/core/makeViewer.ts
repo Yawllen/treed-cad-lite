@@ -27,6 +27,7 @@ export type Viewer = {
 }
 
 export function makeViewer(container: HTMLDivElement): Viewer {
+  container.innerHTML = ''
   const scene = new THREE.Scene()
   scene.background = new THREE.Color(0x0f1020)
 
@@ -34,9 +35,10 @@ export function makeViewer(container: HTMLDivElement): Viewer {
   camera.position.set(160, 120, 160)
 
   const renderer = new THREE.WebGLRenderer({ antialias: true })
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
+  renderer.setPixelRatio(window.devicePixelRatio)
   renderer.setSize(container.clientWidth, container.clientHeight)
   renderer.outputColorSpace = THREE.SRGBColorSpace
+  renderer.setClearColor(0x0b0c1c, 1)
   container.appendChild(renderer.domElement)
   renderer.domElement.id = 'three-canvas'
 
@@ -281,11 +283,16 @@ export function makeViewer(container: HTMLDivElement): Viewer {
   }
 
   function onResize(){
-    const w = container.clientWidth, h = container.clientHeight
-    camera.aspect = w/h; camera.updateProjectionMatrix()
+    const w = container.clientWidth
+    const h = container.clientHeight
+    if (!w || !h) return
+    camera.aspect = w / h
+    camera.updateProjectionMatrix()
     renderer.setSize(w, h)
   }
-  const ro = new ResizeObserver(onResize); ro.observe(container)
+  window.addEventListener('resize', onResize)
+  const ro = new ResizeObserver(onResize)
+  ro.observe(container)
 
   let alive = true
   function loop(){
@@ -298,6 +305,7 @@ export function makeViewer(container: HTMLDivElement): Viewer {
 
   function dispose(){
     alive = false
+    window.removeEventListener('resize', onResize)
     ro.disconnect()
     renderer.dispose()
     detachOutline()

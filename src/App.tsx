@@ -16,7 +16,7 @@ type Axis = 'x' | 'y' | 'z'
 type Mode = 'copy' | 'flip'
 
 const App: React.FC = () => {
-  const mountRef = useRef<HTMLDivElement>(null)
+  const canvasRef = useRef<HTMLDivElement>(null)
   const [viewer, setViewer] = useState<Viewer | null>(null)
   const [showTips, setShowTips] = useState(false)
   const syncingSceneRef = useRef(false)
@@ -82,6 +82,49 @@ const App: React.FC = () => {
     applyTRS(mesh, n.transform)
     return mesh
   }, [applyTRS])
+
+  const getSceneSnapshot = React.useCallback((): { nodes: Node[] } => {
+    if (!viewer) return { nodes }
+    const map = new Map<string, THREE.Object3D>()
+    viewer.scene.traverse((o: any) => {
+      if (o.uuid && o.isObject3D && o.isMesh && !isHelper(o)) map.set(o.uuid, o)
+    })
+    const enriched = nodes.map(n => {
+      const obj = map.get(n.uuid)
+      return obj ? { ...n, transform: meshToTRS(obj) } : n
+    })
+    return { nodes: enriched as Node[] }
+  }, [viewer, nodes])
+
+  const syncSceneToNodes = React.useCallback((targetViewer: Viewer | null = viewer, targetNodes: Node[] = useFeatureTree.getState().nodes) => {
+    const actualViewer = targetViewer ?? viewer
+    if (!actualViewer) return
+
+    syncingSceneRef.current = true
+    try {
+      const prevSelectionId = actualViewer.selection.current?.uuid ?? null
+      const toRemove: THREE.Object3D[] = []
+      actualViewer.scene.traverse((o: any) => {
+        if (o.isMesh && !isHelper(o)) toRemove.push(o)
+      })
+      toRemove.forEach(o => actualViewer.remove(o))
+
+      for (const n of targetNodes) {
+        const mesh = buildMeshFromNode(n)
+        actualViewer.addMesh(mesh, { select: false })
+      }
+
+      if (prevSelectionId) {
+        const next = actualViewer.scene.getObjectByProperty('uuid', prevSelectionId) as THREE.Object3D | null
+        if (next && (next as any).isMesh) actualViewer.select(next)
+        else actualViewer.select(null)
+      } else {
+        actualViewer.select(null)
+      }
+    } finally {
+      syncingSceneRef.current = false
+    }
+  }, [viewer, buildMeshFromNode])
 
   const snapshotSelectedToStore = React.useCallback((triggerInvalidate = false) => {
     if (!viewer) return
@@ -215,52 +258,9 @@ const App: React.FC = () => {
     viewer.invalidate()
   }, [viewer, nodes, addNode, buildMeshFromNode])
 
-  const getSceneSnapshot = React.useCallback((): { nodes: Node[] } => {
-    if (!viewer) return { nodes }
-    const map = new Map<string, THREE.Object3D>()
-    viewer.scene.traverse((o: any) => {
-      if (o.uuid && o.isObject3D && o.isMesh && !isHelper(o)) map.set(o.uuid, o)
-    })
-    const enriched = nodes.map(n => {
-      const obj = map.get(n.uuid)
-      return obj ? { ...n, transform: meshToTRS(obj) } : n
-    })
-    return { nodes: enriched as Node[] }
-  }, [viewer, nodes])
-
-  const syncSceneToNodes = React.useCallback((targetViewer: Viewer | null = viewer, targetNodes: Node[] = useFeatureTree.getState().nodes) => {
-    const actualViewer = targetViewer ?? viewer
-    if (!actualViewer) return
-
-    syncingSceneRef.current = true
-    try {
-      const prevSelectionId = actualViewer.selection.current?.uuid ?? null
-      const toRemove: THREE.Object3D[] = []
-      actualViewer.scene.traverse((o: any) => {
-        if (o.isMesh && !isHelper(o)) toRemove.push(o)
-      })
-      toRemove.forEach(o => actualViewer.remove(o))
-
-      for (const n of targetNodes) {
-        const mesh = buildMeshFromNode(n)
-        actualViewer.addMesh(mesh, { select: false })
-      }
-
-      if (prevSelectionId) {
-        const next = actualViewer.scene.getObjectByProperty('uuid', prevSelectionId) as THREE.Object3D | null
-        if (next && (next as any).isMesh) actualViewer.select(next)
-        else actualViewer.select(null)
-      } else {
-        actualViewer.select(null)
-      }
-    } finally {
-      syncingSceneRef.current = false
-    }
-  }, [viewer, buildMeshFromNode])
-
   useEffect(() => {
-    if (!mountRef.current) return
-    const v = makeViewer(mountRef.current)
+    if (!canvasRef.current) return
+    const v = makeViewer(canvasRef.current)
     setViewer(v)
     ;(async () => {
       const proj = await loadLastProject()
@@ -451,6 +451,18 @@ const App: React.FC = () => {
 
   return (
     <div className="app">
+      <div className="left">
+        <div className="card toolbar">
+          <h3>Примитивы</h3>
+          <button onClick={addCube}>Куб</button>
+          <button onClick={addSphere}>Сфера</button>
+          <button onClick={addCylinder}>Цилиндр</button>
+          <button onClick={addExtrudedRect}>Экструзия (прямоуг.)</button>
+          <hr />
+          <div className="small">G — переместить, R — повернуть, S — масштаб.</div>
+        </div>
+      </div>
+
       <div className="topbar">
         <div className="brand">
           <span>🟣 TreeD CAD — Browser</span>
@@ -466,25 +478,10 @@ const App: React.FC = () => {
           <button className="btn" onClick={() => { viewer?.resetSelectionTRS(); snapshotSelectedToStore(true) }}>Reset (⇧R)</button>
           <button className="btn" onClick={() => viewer?.fitSelectionOrAll()}>Fit (F)</button>
           <button className="btn" onClick={() => setShowTips(true)}>?</button>
-          {/* без экспортов под 3D печать */}
         </div>
       </div>
 
-      <div className="left">
-        <div className="card toolbar">
-          <h3>Примитивы</h3>
-          <button onClick={addCube}>Куб</button>
-          <button onClick={addSphere}>Сфера</button>
-          <button onClick={addCylinder}>Цилиндр</button>
-          <button onClick={addExtrudedRect}>Экструзия (прямоуг.)</button>
-          <hr />
-          <div className="small">G — переместить, R — повернуть, S — масштаб.</div>
-        </div>
-      </div>
-
-      <div className="main">
-        <div className="canvas-wrap" ref={mountRef} />
-      </div>
+      <div className="canvasWrap" ref={canvasRef} />
 
       <div className="right">
         <SelectionInspector viewer={viewer} />
@@ -496,6 +493,7 @@ const App: React.FC = () => {
           <ul>{nodes.map(n => <li key={n.uuid}>{n.type}</li>)}</ul>
         </div>
       </div>
+
       <ShortcutsOverlay open={showTips} onClose={() => setShowTips(false)} />
     </div>
   )
