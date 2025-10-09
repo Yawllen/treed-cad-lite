@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { STLExporter } from 'three/examples/jsm/exporters/STLExporter.js'
 import { ThreeMFExporter } from 'three/examples/jsm/exporters/3MFExporter.js'
-import { makeViewer, Viewer } from './core/makeViewer'
+import { makeViewer, Viewer, isHelperObject } from './core/makeViewer'
 import { createCube, createCylinder, createSphere, createExtruded } from './core/primitives'
 import type { Node, TRS } from './core/featureTree'
 import { useFeatureTree } from './core/featureTree'
@@ -13,9 +13,15 @@ import SelectionInspector from './ui/SelectionInspector'
 import SnapPanel from './ui/SnapPanel'
 import ArrayPanel from './ui/ArrayPanel'
 import MirrorPanel from './ui/MirrorPanel'
+import ExportPanel from './ui/ExportPanel'
 
 type Axis = 'x' | 'y' | 'z'
 type Mode = 'copy' | 'flip'
+
+function formatStamp(date = new Date()){
+  const pad = (v: number) => String(v).padStart(2, '0')
+  return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`
+}
 
 const App: React.FC = () => {
   const canvasRef = useRef<HTMLDivElement>(null)
@@ -39,6 +45,9 @@ const App: React.FC = () => {
   const rotSnapDeg = usePrefs(s => s.rotSnapDeg)
   const scaleSnap = usePrefs(s => s.scaleSnap)
   const setSnapEnabled = usePrefs(s => s.setEnabled)
+  const exportSelectionOnly = usePrefs(s => s.exportSelectionOnly)
+  const exportStlAscii = usePrefs(s => s.exportStlAscii)
+  const setExportSelectionOnly = usePrefs(s => s.setExportSelectionOnly)
   const [lastArrayCfg, setLastArrayCfg] = useState<{ count: number; spacing: number; axis: Axis }>({ count: 5, spacing: 30, axis: 'x' })
   const [lastMirror, setLastMirror] = useState<{ axis: Axis; mode: Mode }>({ axis: 'x', mode: 'copy' })
 
@@ -49,8 +58,6 @@ const App: React.FC = () => {
     viewer.remove(sel)
     removeByUUID(sel.uuid)
   }, [viewer, removeByUUID])
-
-  function isHelper(o: any){ return !!(o?.userData?.__helper) || o?.isTransformControls || o?.name === '__outline' }
 
   function meshToTRS(m: THREE.Object3D){
     return {
@@ -91,7 +98,7 @@ const App: React.FC = () => {
     if (!viewer) return { nodes }
     const map = new Map<string, THREE.Object3D>()
     viewer.scene.traverse((o: any) => {
-      if (o.uuid && o.isObject3D && o.isMesh && !isHelper(o)) map.set(o.uuid, o)
+      if (o.uuid && o.isObject3D && o.isMesh && !isHelperObject(o)) map.set(o.uuid, o)
     })
     const enriched = nodes.map(n => {
       const obj = map.get(n.uuid)
@@ -109,7 +116,7 @@ const App: React.FC = () => {
       const prevSelectionId = actualViewer.selection.current?.uuid ?? null
       const toRemove: THREE.Object3D[] = []
       actualViewer.scene.traverse((o: any) => {
-        if (o.isMesh && !isHelper(o)) toRemove.push(o)
+        if (o.isMesh && !isHelperObject(o)) toRemove.push(o)
       })
       toRemove.forEach(o => actualViewer.remove(o))
 
@@ -361,6 +368,22 @@ const App: React.FC = () => {
 
   useEffect(() => {
     function onKey(e: KeyboardEvent){
+      if (!e.ctrlKey && !e.metaKey && e.key.toLowerCase() === 'e') {
+        e.preventDefault()
+        if (e.shiftKey) {
+          const current = usePrefs.getState().exportSelectionOnly
+          setExportSelectionOnly(!current)
+        } else {
+          handleExportSTL()
+        }
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [handleExportSTL, setExportSelectionOnly])
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent){
       if (e.key === 'Escape' && showTips) {
         setShowTips(false)
       }
@@ -462,21 +485,26 @@ const App: React.FC = () => {
     URL.revokeObjectURL(url)
   }, [])
 
-  const exportSTL = React.useCallback((selectionOnly = false) => {
+  const makeExportFilename = React.useCallback((selectionOnly: boolean, ext: 'stl' | '3mf') => {
+    const prefix = selectionOnly ? 'selection' : 'scene'
+    return `${prefix}-${formatStamp()}.${ext}`
+  }, [])
+
+  const runExportSTL = React.useCallback((selectionOnly: boolean, ascii: boolean) => {
     if (!viewer) return
     const group = viewer.buildExportGroup(selectionOnly)
     if (group.children.length === 0) return
     const exporter = stlExporterRef.current ?? new STLExporter()
     stlExporterRef.current = exporter
-    const result = exporter.parse(group, { binary: true })
+    const result = exporter.parse(group, { binary: !ascii })
     const blob =
       result instanceof ArrayBuffer
         ? new Blob([result], { type: 'model/stl' })
         : new Blob([result], { type: 'model/stl' })
-    downloadBlob(blob, selectionOnly ? 'selection.stl' : 'scene.stl')
-  }, [viewer, downloadBlob])
+    downloadBlob(blob, makeExportFilename(selectionOnly, 'stl'))
+  }, [viewer, downloadBlob, makeExportFilename])
 
-  const export3MF = React.useCallback((selectionOnly = false) => {
+  const runExport3MF = React.useCallback((selectionOnly: boolean) => {
     if (!viewer) return
     const group = viewer.buildExportGroup(selectionOnly)
     if (group.children.length === 0) return
@@ -484,8 +512,16 @@ const App: React.FC = () => {
     threeMFExporterRef.current = exporter
     const result = exporter.parse(group)
     const blob = result instanceof Blob ? result : new Blob([result], { type: 'model/3mf' })
-    downloadBlob(blob, selectionOnly ? 'selection.3mf' : 'scene.3mf')
-  }, [viewer, downloadBlob])
+    downloadBlob(blob, makeExportFilename(selectionOnly, '3mf'))
+  }, [viewer, downloadBlob, makeExportFilename])
+
+  const handleExportSTL = React.useCallback(() => {
+    runExportSTL(exportSelectionOnly, exportStlAscii)
+  }, [runExportSTL, exportSelectionOnly, exportStlAscii])
+
+  const handleExport3MF = React.useCallback(() => {
+    runExport3MF(exportSelectionOnly)
+  }, [runExport3MF, exportSelectionOnly])
 
   return (
     <div className="app">
@@ -510,8 +546,8 @@ const App: React.FC = () => {
           <button className="btn" onClick={onNew}>New</button>
           <button className="btn" onClick={onSaveJSON}>Save (.json)</button>
           <button className="btn" onClick={onLoadJSON}>Load (.json)</button>
-          <button className="btn" onClick={() => exportSTL(false)}>Export (.stl)</button>
-          <button className="btn" onClick={() => export3MF(false)}>Export (.3mf)</button>
+          <button className="btn" onClick={() => runExportSTL(false, false)}>Export (.stl)</button>
+          <button className="btn" onClick={() => runExport3MF(false)}>Export (.3mf)</button>
           <button className="btn" onClick={duplicateSelected}>Duplicate (Ctrl+D)</button>
           <button className="btn" onClick={() => { viewer?.alignSelectionToGround(); snapshotSelectedToStore(true) }}>Ground (⇧G)</button>
           <button className="btn" onClick={() => { viewer?.centerSelectionXZ(); snapshotSelectedToStore(true) }}>Center XZ (⇧C)</button>
@@ -526,6 +562,7 @@ const App: React.FC = () => {
       <div className="right">
         <SelectionInspector viewer={viewer} />
         <SnapPanel />
+        <ExportPanel onExportSTL={handleExportSTL} onExport3MF={handleExport3MF} />
         <MirrorPanel onMirror={handleMirror} />
         <ArrayPanel onCreate={handleCreateArray} />
         <div className="card">

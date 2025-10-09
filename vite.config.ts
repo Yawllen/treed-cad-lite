@@ -1,12 +1,14 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { fileURLToPath } from 'node:url'
 
-const fromRoot = (relativePath: string) => new URL(relativePath, import.meta.url).pathname
+const fromRoot = (relativePath: string) => fileURLToPath(new URL(relativePath, import.meta.url))
 
 export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
+      '@': fromRoot('./src'),
       'three/examples/jsm/geometries/ExtrudeGeometry.js':
         fromRoot('./src/vendor/three/examples/jsm/geometries/ExtrudeGeometry.ts'),
       'three/examples/jsm/exporters/3MFExporter.js':

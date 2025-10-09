@@ -2,6 +2,39 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js'
 
+export function isHelperObject(o: any){
+  return !!(o?.userData?.__helper) || o?.isTransformControls || o?.name === '__outline'
+}
+
+function cloneMaterialForExport(mat: THREE.Material | THREE.Material[]): THREE.Material | THREE.Material[] {
+  if (Array.isArray(mat)) {
+    return mat.map(m => (typeof m.clone === 'function' ? m.clone() : m))
+  }
+  return typeof mat.clone === 'function' ? mat.clone() : mat
+}
+
+export function buildExportGroupFromRoots(
+  roots: THREE.Object3D[],
+  options?: { isHelper?: (obj: any) => boolean },
+): THREE.Group {
+  const isHelper = options?.isHelper ?? isHelperObject
+  const group = new THREE.Group()
+  roots.forEach(root => {
+    root.traverse((obj: any) => {
+      if (obj.isMesh && !isHelper(obj)) {
+        const source = obj as THREE.Mesh
+        const geom = source.geometry.clone()
+        geom.applyMatrix4(source.matrixWorld)
+        const material = cloneMaterialForExport(source.material)
+        const mesh = new THREE.Mesh(geom, material as any)
+        mesh.name = source.name
+        group.add(mesh)
+      }
+    })
+  })
+  return group
+}
+
 export type Viewer = {
   scene: THREE.Scene
   camera: THREE.PerspectiveCamera
@@ -77,10 +110,6 @@ export function makeViewer(container: HTMLDivElement): Viewer {
     toggleSnap = cb
   }
 
-  function isHelper(o: any){
-    return !!(o?.userData?.__helper) || o?.isTransformControls || o?.name === '__outline'
-  }
-
   function isInsideTransformControls(obj: THREE.Object3D): boolean {
     let p: any = obj
     while (p) {
@@ -133,7 +162,7 @@ export function makeViewer(container: HTMLDivElement): Viewer {
     const hits = ray.intersectObjects(scene.children, true).filter(h => {
       const o: any = h.object
       if (!o.isMesh) return false
-      if (isHelper(o)) return false
+      if (isHelperObject(o)) return false
       if (isInsideTransformControls(o)) return false
       return true
     })
@@ -149,7 +178,7 @@ export function makeViewer(container: HTMLDivElement): Viewer {
     ray.setFromCamera(pointer, camera)
     const overPickable = ray.intersectObjects(scene.children, true).some(h => {
       const o: any = h.object
-      return o.isMesh && !isHelper(o) && !isInsideTransformControls(o)
+      return o.isMesh && !isHelperObject(o) && !isInsideTransformControls(o)
     })
     renderer.domElement.style.cursor = overPickable ? 'pointer' : 'default'
   })
@@ -157,49 +186,21 @@ export function makeViewer(container: HTMLDivElement): Viewer {
   function collectPickables(root: THREE.Object3D){
     const list: THREE.Object3D[] = []
     root.traverse((o: any) => {
-      if (o.isMesh && !isHelper(o)) list.push(o)
+      if (o.isMesh && !isHelperObject(o)) list.push(o)
     })
     return list
   }
 
-  function cloneMaterial(mat: THREE.Material | THREE.Material[]): THREE.Material | THREE.Material[] {
-    if (Array.isArray(mat)) {
-      return mat.map(m => (typeof m.clone === 'function' ? m.clone() : m))
-    }
-    return typeof mat.clone === 'function' ? mat.clone() : mat
-  }
-
-  function gatherExportMeshes(selectionOnly: boolean): THREE.Mesh[] {
-    const meshes: THREE.Mesh[] = []
+  function buildExportGroup(selectionOnly = false): THREE.Group {
+    scene.updateMatrixWorld(true)
     const roots: THREE.Object3D[] = []
     if (selectionOnly) {
-      if (selection.current && !isHelper(selection.current)) {
-        roots.push(selection.current)
-      }
+      if (selection.current && !isHelperObject(selection.current)) roots.push(selection.current)
     } else {
       roots.push(scene)
     }
-    roots.forEach(root => {
-      root.traverse((obj: any) => {
-        if (obj.isMesh && !isHelper(obj)) meshes.push(obj as THREE.Mesh)
-      })
-    })
-    return meshes
-  }
-
-  function buildExportGroup(selectionOnly = false): THREE.Group {
-    scene.updateMatrixWorld(true)
-    const group = new THREE.Group()
-    const meshes = gatherExportMeshes(selectionOnly)
-    meshes.forEach(source => {
-      const geom = source.geometry.clone()
-      geom.applyMatrix4(source.matrixWorld)
-      const material = cloneMaterial(source.material)
-      const mesh = new THREE.Mesh(geom, material as any)
-      mesh.name = source.name
-      group.add(mesh)
-    })
-    return group
+    if (!roots.length) return new THREE.Group()
+    return buildExportGroupFromRoots(roots, { isHelper: isHelperObject })
   }
 
   function calcFitDistance({ halfW, halfH, vFovRad, aspect, padding = 1.2 }:{
@@ -234,7 +235,7 @@ export function makeViewer(container: HTMLDivElement): Viewer {
   function fitSelectionOrAll(){
     const sel = selection.current
     const box = new THREE.Box3()
-    if (sel && !isHelper(sel)) {
+    if (sel && !isHelperObject(sel)) {
       box.setFromObject(sel)
     } else {
       const pickables = collectPickables(scene)

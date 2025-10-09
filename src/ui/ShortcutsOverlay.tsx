@@ -17,6 +17,8 @@ export default function ShortcutsOverlay({ open, onClose }: Props) {
           <li><kbd>Ctrl</kbd>+<kbd>D</kbd> — дубликат</li>
           <li><kbd>L</kbd> — Linear Array (по последним параметрам)</li>
           <li><kbd>M</kbd> — Mirror (последние параметры)</li>
+          <li><kbd>E</kbd> — Export STL (по текущим опциям)</li>
+          <li><kbd>⇧E</kbd> — Toggle Selection only</li>
           <li><kbd>F</kbd> — Fit (выделение или вся сцена)</li>
           <li><kbd>X</kbd> — включить/выключить привязку (Snap)</li>
           <li><kbd>⇧G</kbd> — Align to Ground</li>
