@@ -269,6 +269,53 @@ const App: React.FC = () => {
     viewer.invalidate()
   }, [viewer, nodes, addNode, buildMeshFromNode])
 
+  const downloadBlob = React.useCallback((blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+  }, [])
+
+  const makeExportFilename = React.useCallback((selectionOnly: boolean, ext: 'stl' | '3mf') => {
+    const prefix = selectionOnly ? 'selection' : 'scene'
+    return `${prefix}-${formatStamp()}.${ext}`
+  }, [])
+
+  const runExportSTL = React.useCallback((selectionOnly: boolean, ascii: boolean) => {
+    if (!viewer) return
+    const group = viewer.buildExportGroup(selectionOnly)
+    if (group.children.length === 0) return
+    const exporter = stlExporterRef.current ?? new STLExporter()
+    stlExporterRef.current = exporter
+    const result = exporter.parse(group, { binary: !ascii })
+    const blob =
+      result instanceof ArrayBuffer
+        ? new Blob([result], { type: 'model/stl' })
+        : new Blob([result], { type: 'model/stl' })
+    downloadBlob(blob, makeExportFilename(selectionOnly, 'stl'))
+  }, [viewer, downloadBlob, makeExportFilename])
+
+  const runExport3MF = React.useCallback((selectionOnly: boolean) => {
+    if (!viewer) return
+    const group = viewer.buildExportGroup(selectionOnly)
+    if (group.children.length === 0) return
+    const exporter = threeMFExporterRef.current ?? new ThreeMFExporter()
+    threeMFExporterRef.current = exporter
+    const result = exporter.parse(group)
+    const blob = result instanceof Blob ? result : new Blob([result], { type: 'model/3mf' })
+    downloadBlob(blob, makeExportFilename(selectionOnly, '3mf'))
+  }, [viewer, downloadBlob, makeExportFilename])
+
+  const handleExportSTL = React.useCallback(() => {
+    runExportSTL(exportSelectionOnly, exportStlAscii)
+  }, [runExportSTL, exportSelectionOnly, exportStlAscii])
+
+  const handleExport3MF = React.useCallback(() => {
+    runExport3MF(exportSelectionOnly)
+  }, [runExport3MF, exportSelectionOnly])
+
   useEffect(() => {
     if (!canvasRef.current) return
     const v = makeViewer(canvasRef.current)
@@ -475,53 +522,6 @@ const App: React.FC = () => {
     clearTree()
     syncSceneToNodes()
   }
-
-  const downloadBlob = React.useCallback((blob: Blob, filename: string) => {
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = filename
-    a.click()
-    URL.revokeObjectURL(url)
-  }, [])
-
-  const makeExportFilename = React.useCallback((selectionOnly: boolean, ext: 'stl' | '3mf') => {
-    const prefix = selectionOnly ? 'selection' : 'scene'
-    return `${prefix}-${formatStamp()}.${ext}`
-  }, [])
-
-  const runExportSTL = React.useCallback((selectionOnly: boolean, ascii: boolean) => {
-    if (!viewer) return
-    const group = viewer.buildExportGroup(selectionOnly)
-    if (group.children.length === 0) return
-    const exporter = stlExporterRef.current ?? new STLExporter()
-    stlExporterRef.current = exporter
-    const result = exporter.parse(group, { binary: !ascii })
-    const blob =
-      result instanceof ArrayBuffer
-        ? new Blob([result], { type: 'model/stl' })
-        : new Blob([result], { type: 'model/stl' })
-    downloadBlob(blob, makeExportFilename(selectionOnly, 'stl'))
-  }, [viewer, downloadBlob, makeExportFilename])
-
-  const runExport3MF = React.useCallback((selectionOnly: boolean) => {
-    if (!viewer) return
-    const group = viewer.buildExportGroup(selectionOnly)
-    if (group.children.length === 0) return
-    const exporter = threeMFExporterRef.current ?? new ThreeMFExporter()
-    threeMFExporterRef.current = exporter
-    const result = exporter.parse(group)
-    const blob = result instanceof Blob ? result : new Blob([result], { type: 'model/3mf' })
-    downloadBlob(blob, makeExportFilename(selectionOnly, '3mf'))
-  }, [viewer, downloadBlob, makeExportFilename])
-
-  const handleExportSTL = React.useCallback(() => {
-    runExportSTL(exportSelectionOnly, exportStlAscii)
-  }, [runExportSTL, exportSelectionOnly, exportStlAscii])
-
-  const handleExport3MF = React.useCallback(() => {
-    runExport3MF(exportSelectionOnly)
-  }, [runExport3MF, exportSelectionOnly])
 
   return (
     <div className="app">
